@@ -1,0 +1,101 @@
+{
+  "theme": "Light",
+  "archetype": "Archetype 4: Swiss & High-Contrast",
+  "brand": {
+    "name": "IMORA",
+    "slogan": "La plateforme immobilière du futur",
+    "target_audience": "Particuliers, agences immobilières, promoteurs au Tchad",
+    "core_emotion": "Trust, Modernity, Accessibility, Future"
+  },
+  "colors": {
+    "background": "#FAFAFA",
+    "surface": "#FFFFFF",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#525252",
+    "primary": "#FF6B1A",
+    "primary_hover": "#E65A10",
+    "secondary": "#00B4FF",
+    "secondary_hover": "#0099D9",
+    "header_footer_bg": "#0A0A0A",
+    "border": "#E5E5E5",
+    "success": "#22C55E",
+    "warning": "#F59E0B",
+    "error": "#EF4444",
+    "chad_flag": {
+      "blue": "#002664",
+      "yellow": "#FECB00",
+      "red": "#C60C30"
+    }
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "scales": {
+      "h1": "text-4xl font-black tracking-tighter sm:text-5xl",
+      "h2": "text-2xl font-bold tracking-tight sm:text-3xl",
+      "h3": "text-xl font-bold tracking-tight",
+      "h4": "text-lg font-semibold",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm leading-normal",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em]"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous spacing for tap targets (mobile-first), dense data presented in clean bento grids. Flat architecture to save rendering on low-end devices.",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid": "grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6",
+    "bento_grid": "Grid items must be direct children. Use col-span logic for featured properties (md:col-span-2).",
+    "bottom_sheet": "Use bottom-sheet secondary flows for filters, contact options, and map legends instead of full-screen interruptions."
+  },
+  "components": {
+    "cards": {
+      "style": "Flat background (bg-white), sharp or slightly rounded corners (rounded-xl maximum), 1px solid border (border-neutral-200), NO heavy drop shadows. High contrast.",
+      "image_wrapper": "aspect-[4/3] w-full overflow-hidden relative bg-neutral-100",
+      "badges": "Absolute positioned. Verified badge MUST use Cyan Blue (#00B4FF) background with white text or checkmark."
+    },
+    "buttons": {
+      "primary": "bg-[#FF6B1A] text-white font-bold hover:bg-[#E65A10] active:scale-95 transition-transform h-12 px-6 rounded-lg w-full md:w-auto flex items-center justify-center",
+      "secondary": "bg-[#00B4FF] text-white font-bold hover:bg-[#0099D9] active:scale-95 transition-transform h-12 px-6 rounded-lg",
+      "outline": "border-2 border-neutral-200 text-neutral-900 hover:border-neutral-900 h-12 px-6 rounded-lg font-semibold"
+    },
+    "navigation": {
+      "mobile": "Fixed bottom navigation bar on mobile devices (Home, Search, Saved, Profile/Menu). Use clear icons. Z-index 50.",
+      "header": "Sticky top z-50. Dark background (#0A0A0A) matching logo. Include a subtle Chad flag stripe (Blue/Yellow/Red, h-1) at the very top edge. Logo left, Lang selector right."
+    },
+    "inputs": {
+      "style": "h-12 bg-neutral-50 border border-neutral-200 rounded-lg px-4 focus:ring-2 focus:ring-[#00B4FF] focus:border-transparent outline-none transition-all w-full",
+      "labels": "text-sm font-semibold text-neutral-900 mb-1 block"
+    },
+    "badges": {
+      "verified": "bg-[#00B4FF] text-white text-xs font-bold px-2 py-1 rounded flex items-center gap-1 shadow-sm",
+      "status": "bg-neutral-100 text-neutral-900 border border-neutral-200 text-xs font-bold px-2 py-1 rounded"
+    }
+  },
+  "media": {
+    "logo_url": "https://customer-assets.emergentagent.com/job_0d3a448a-6931-4cac-bbb2-34a1ea7d48ef/artifacts/48f72vfn_1781186527624%20%281%29.jpg",
+    "images": {
+      "hero_exteriors": [
+        "https://images.unsplash.com/photo-1706164971302-e30c0640cc3b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBhZnJpY2FuJTIwdmlsbGElMjBleHRlcmlvcnxlbnwwfHx8fDE3ODEzNzc0OTV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1706808849780-7a04fbac83ef?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBhZnJpY2FuJTIwdmlsbGElMjBleHRlcmlvcnxlbnwwfHx8fDE3ODEzNzc0OTV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1698994705178-d244d73ea573?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODF8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBhZnJpY2FuJTIwdmlsbGElMjBleHRlcmlvcnxlbnwwfHx8fDE3ODEzNzc0OTV8MA&ixlib=rb-4.1.0&q=85"
+      ],
+      "interiors": [
+        "https://images.unsplash.com/photo-1638454795595-0a0abf68614d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBhcGFydG1lbnQlMjBpbnRlcmlvciUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODEzNzc0OTV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1738168246881-40f35f8aba0a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBhcGFydG1lbnQlMjBpbnRlcmlvciUyMGFyY2hpdGVjdHVyZXxlbnwwfHx8fDE3ODEzNzc0OTV8MA&ixlib=rb-4.1.0&q=85"
+      ]
+    }
+  },
+  "specific_instructions": {
+    "offline_pwa": "Ensure the application registers a ServiceWorker and uses caching for offline capabilities. Keep initial load minimal.",
+    "rtl_support": "For Arabic (AR), use logical CSS properties (e.g., ms-4 instead of ml-4, text-start instead of text-left, pe-4 instead of pr-4). App must wrap content in <div dir='rtl'> when Arabic is selected.",
+    "chad_flag": "Add a thin stripe at the top of the header: <div className='h-1 flex w-full'><div className='flex-1 bg-[#002664]'/><div className='flex-1 bg-[#FECB00]'/><div className='flex-1 bg-[#C60C30]'/></div>. Colors are official Chad flag colors.",
+    "testing": "All interactive elements MUST include data-testid attribute (e.g., data-testid='search-button', data-testid='property-card').",
+    "icons": "Use lucide-react. They render well and are lightweight.",
+    "performance": "DO NOT USE heavy glassmorphism, blur effects, or large box-shadows. This app targets low-end Android devices with slow connections. Use flat colors and 1px borders.",
+    "maps": "Integrate Leaflet for maps (react-leaflet). Ensure the map container has a fixed height and z-index is managed so it doesn't overlap sticky headers/bottom navs.",
+    "typography_setup": "Do not use Inter or Roboto. Setup Outfit for headings and Manrope for body text in tailwind config.",
+    "file_extensions": "Use .js and .jsx for files, not .tsx.",
+    "ai_assistant": "The IMORA AI Agent chat should be accessible via a floating action button or bottom navigation. It should have a professional, assistant-like UI.",
+    "payments": "Airtel Money / Moov Money manual payment pages must have clear instructions, USSD code display, and an input for the transaction ID."
+  }
+}
