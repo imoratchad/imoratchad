@@ -39,9 +39,15 @@ const AdminDashboard = () => {
     return <div className="max-w-md mx-auto p-8 text-center"><p className="text-neutral-500">Accès admin requis.</p></div>;
   }
 
+  const openWhatsApp = (url) => {
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  };
   const toggleVerified = async (id, verified) => {
-    await api.put(`/admin/properties/${id}/verify`, { verified });
-    toast.success(verified ? "Bien vérifié" : "Vérification retirée");
+    const { data } = await api.put(`/admin/properties/${id}/verify`, { verified });
+    toast.success(verified ? "Bien vérifié ✓" : "Vérification retirée", {
+      action: verified && data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
+      duration: 8000,
+    });
     refresh();
   };
   const toggleFeatured = async (id, featured) => {
@@ -50,16 +56,24 @@ const AdminDashboard = () => {
     refresh();
   };
   const setStatus = async (id, status) => {
-    await api.put(`/admin/properties/${id}/verify`, { verified: properties.find(p => p.id === id)?.verified || false, status });
-    toast.success("Statut mis à jour"); refresh();
+    const { data } = await api.put(`/admin/properties/${id}/verify`, { verified: properties.find(p => p.id === id)?.verified || false, status });
+    toast.success("Statut mis à jour", {
+      action: data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
+      duration: 8000,
+    });
+    refresh();
   };
   const updateUser = async (uid, patch) => {
     await api.put(`/admin/users/${uid}`, patch);
     toast.success("Utilisateur mis à jour"); refresh();
   };
   const updatePayment = async (pid, status) => {
-    await api.put(`/admin/payments/${pid}`, { status });
-    toast.success("Paiement mis à jour"); refresh();
+    const { data } = await api.put(`/admin/payments/${pid}`, { status });
+    toast.success(`Paiement ${status}`, {
+      action: data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
+      duration: 8000,
+    });
+    refresh();
   };
 
   return (

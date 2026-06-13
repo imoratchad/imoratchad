@@ -19,7 +19,7 @@ const Publish = () => {
     lat: NDJAMENA_CENTER.lat, lng: NDJAMENA_CENTER.lng, location_visibility: "neighborhood",
     price: "", negotiable: false,
     rooms: 0, bathrooms: 0, living_rooms: 0, land_area: 0, living_area: 0,
-    photos: [], videos: [], documents: [],
+    photos: [], videos: [], virtual_tour_url: "", documents: [],
     contact_name: user?.name || "", contact_phone: user?.phone || "", contact_whatsapp: user?.whatsapp || "", contact_email: user?.email || "",
   });
 
@@ -252,6 +252,18 @@ const Publish = () => {
                 <input data-testid="publish-video" type="file" accept="video/*" className="hidden" onChange={onVideo} />
               </label>
               <p className="text-xs text-neutral-500 mt-1">{form.videos.length} vidéo(s)</p>
+            </div>
+            <div>
+              <label className="imora-label">Visite virtuelle (URL YouTube / Vimeo)</label>
+              <input
+                data-testid="publish-virtual-tour"
+                type="url"
+                placeholder="https://youtube.com/watch?v=..."
+                value={form.virtual_tour_url || ""}
+                onChange={(e) => set("virtual_tour_url", e.target.value)}
+                className="imora-input"
+              />
+              <p className="text-xs text-neutral-500 mt-1">Optionnel — Lien direct vers une visite vidéo complète du bien.</p>
             </div>
             <div>
               <label className="imora-label">{t("detail.documents")}</label>

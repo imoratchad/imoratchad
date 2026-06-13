@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Home as HomeIcon, Heart, MessageCircle, Eye, Trash2, Edit, Phone, User, Save } from "lucide-react";
+import { Home as HomeIcon, Heart, MessageCircle, Eye, Trash2, Edit, Phone, User, Save, BarChart3, Bell } from "lucide-react";
 import { toast } from "sonner";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from "recharts";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { ROLES, formatPrice, findLabelByValue } from "../lib/constants";
+
+const COLORS = ["#FF6B1A", "#00B4FF", "#0A0A0A", "#FECB00", "#22C55E", "#EF4444"];
 
 const Dashboard = () => {
   const { t } = useTranslation();
@@ -13,12 +16,18 @@ const Dashboard = () => {
   const [tab, setTab] = useState("mine");
   const [mine, setMine] = useState([]);
   const [favs, setFavs] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
   const [profile, setProfile] = useState({ role: user?.role || "particulier", phone: user?.phone || "", whatsapp: user?.whatsapp || "", agency_name: user?.agency_name || "" });
 
   useEffect(() => {
     if (!user) return;
     api.get(`/properties?user_id=${user.user_id}&status=`).then(({ data }) => setMine(data));
     api.get("/favorites").then(({ data }) => setFavs(data));
+    api.get("/notifications/mine").then(({ data }) => setNotifications(data));
+    if (user.role === "agence" || user.role === "promoteur") {
+      api.get("/agency/analytics").then(({ data }) => setAnalytics(data));
+    }
   }, [user]);
 
   if (!user) return <div className="max-w-md mx-auto p-8 text-center"><Link to="/login" className="imora-btn-primary inline-flex">{t("nav.login")}</Link></div>;
@@ -63,7 +72,9 @@ const Dashboard = () => {
       <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar">
         {[
           { v: "mine", l: t("dashboard.mine") },
+          ...(user.role === "agence" || user.role === "promoteur" ? [{ v: "analytics", l: "Analytics" }] : []),
           { v: "favs", l: t("dashboard.favorites") },
+          { v: "notifs", l: "Notifications" + (notifications.filter(n => !n.read).length ? ` (${notifications.filter(n => !n.read).length})` : "") },
           { v: "profile", l: t("dashboard.profile") },
         ].map(tt => (
           <button key={tt.v} onClick={() => setTab(tt.v)} data-testid={`tab-${tt.v}`} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${tab === tt.v ? "bg-[#0A0A0A] text-white" : "bg-white border border-neutral-200"}`}>{tt.l}</button>
@@ -104,6 +115,84 @@ const Dashboard = () => {
         </div>
       )}
 
+      {tab === "analytics" && analytics && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Stat label="Annonces totales" value={analytics.total} icon={HomeIcon} color="#FF6B1A" />
+            <Stat label="Vendues" value={analytics.sold} icon={HomeIcon} color="#22C55E" />
+            <Stat label="Louées" value={analytics.rented} icon={HomeIcon} color="#00B4FF" />
+            <Stat label="Vérifiées" value={analytics.verified} icon={HomeIcon} color="#FECB00" />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ChartCard title="Annonces publiées par mois">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={analytics.by_month}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" stroke="#666" fontSize={11} />
+                  <YAxis stroke="#666" fontSize={11} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke="#FF6B1A" strokeWidth={3} dot={{ fill: "#FF6B1A", r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+            <ChartCard title="Répartition par type">
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={analytics.by_type} dataKey="value" nameKey="name" outerRadius={80} label={(e) => e.name}>
+                    {analytics.by_type.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ChartCard title="Top 5 — Vues">
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={analytics.top_views} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" stroke="#666" fontSize={11} />
+                  <YAxis type="category" dataKey="title" stroke="#666" fontSize={10} width={120} tickFormatter={(v) => v.length > 16 ? v.substring(0, 16) + "…" : v} />
+                  <Tooltip />
+                  <Bar dataKey="views" fill="#00B4FF" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+            <ChartCard title="Top 5 — Contacts">
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={analytics.top_contacts} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" stroke="#666" fontSize={11} />
+                  <YAxis type="category" dataKey="title" stroke="#666" fontSize={10} width={120} tickFormatter={(v) => v.length > 16 ? v.substring(0, 16) + "…" : v} />
+                  <Tooltip />
+                  <Bar dataKey="contacts" fill="#FF6B1A" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          </div>
+        </div>
+      )}
+
+      {tab === "notifs" && (
+        <div className="space-y-2">
+          {notifications.length === 0 ? (
+            <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center text-neutral-500">Aucune notification</div>
+          ) : notifications.map((n) => (
+            <div key={n.id} data-testid={`notif-${n.id}`} className={`bg-white border rounded-xl p-4 flex items-start gap-3 ${n.read ? "border-neutral-200" : "border-[#FF6B1A] bg-[#FF6B1A]/5"}`}>
+              <div className="p-2 rounded-lg" style={{ background: n.read ? "#f5f5f5" : "#FF6B1A1A" }}><Bell className="h-4 w-4" style={{ color: n.read ? "#999" : "#FF6B1A" }} /></div>
+              <div className="flex-1">
+                <div className="font-heading font-bold">{n.title}</div>
+                <p className="text-sm text-neutral-700">{n.message}</p>
+                <div className="text-xs text-neutral-400 mt-1">{new Date(n.created_at).toLocaleString("fr-FR")}</div>
+              </div>
+              {!n.read && (
+                <button onClick={async () => { await api.post(`/notifications/${n.id}/read`); setNotifications(notifications.map(x => x.id === n.id ? { ...x, read: true } : x)); }} data-testid={`mark-read-${n.id}`} className="text-xs text-[#00B4FF] font-bold">Marquer lu</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {tab === "profile" && (
         <div className="bg-white border border-neutral-200 rounded-xl p-5 max-w-xl space-y-4">
           <div>
@@ -123,6 +212,13 @@ const Dashboard = () => {
     </div>
   );
 };
+
+const ChartCard = ({ title, children }) => (
+  <div className="bg-white border border-neutral-200 rounded-xl p-4">
+    <h3 className="font-heading font-bold text-sm uppercase tracking-widest text-neutral-500 mb-3">{title}</h3>
+    {children}
+  </div>
+);
 
 const Stat = ({ label, value, icon: Icon, color }) => (
   <div className="bg-white border border-neutral-200 rounded-xl p-4">

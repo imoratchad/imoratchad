@@ -86,6 +86,7 @@ class Property(BaseModel):
     location_visibility: LocationVisibility = "neighborhood"
     photos: List[str] = []  # base64 or URLs
     videos: List[str] = []
+    virtual_tour_url: Optional[str] = ""  # YouTube/Vimeo/external embed
     documents: List[dict] = []  # {type, name, data}
     contact_name: str
     contact_phone: str
@@ -120,6 +121,7 @@ class PropertyCreate(BaseModel):
     location_visibility: LocationVisibility = "neighborhood"
     photos: List[str] = []
     videos: List[str] = []
+    virtual_tour_url: Optional[str] = ""
     documents: List[dict] = []
     contact_name: str
     contact_phone: str
@@ -194,6 +196,34 @@ class FeedbackCreate(BaseModel):
     type: str = "suggestion"
     message: str
     property_id: Optional[str] = None
+
+
+class Notification(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    type: str  # property_verified, property_featured, property_status, payment_confirmed, payment_rejected
+    title: str
+    message: str
+    property_id: Optional[str] = None
+    payment_id: Optional[str] = None
+    read: bool = False
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+def build_whatsapp_url(phone: str, message: str) -> str:
+    if not phone:
+        return ""
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    from urllib.parse import quote
+    return f"https://wa.me/{digits}?text={quote(message)}"
+
+
+async def notify_user(user_id: str, ntype: str, title: str, message: str, property_id: str = None, payment_id: str = None) -> dict:
+    notif = Notification(user_id=user_id, type=ntype, title=title, message=message, property_id=property_id, payment_id=payment_id)
+    await db.notifications.insert_one(notif.model_dump())
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    phone = (user or {}).get("whatsapp") or (user or {}).get("phone") or ""
+    return {"notification": notif.model_dump(), "whatsapp_url": build_whatsapp_url(phone, f"{title}\n\n{message}\n\n— IMORA Tchad")}
 
 
 class ChatMessage(BaseModel):
@@ -583,13 +613,34 @@ async def admin_update_user(user_id: str, body: dict, request: Request, authoriz
 @api_router.put("/admin/properties/{prop_id}/verify")
 async def admin_verify_property(prop_id: str, body: dict, request: Request, authorization: Optional[str] = Header(None)):
     await require_admin(request, authorization)
+    prop = await db.properties.find_one({"id": prop_id}, {"_id": 0})
+    if not prop:
+        raise HTTPException(status_code=404, detail="Not found")
     set_fields = {"verified": bool(body.get("verified", True))}
     if "featured" in body:
         set_fields["featured"] = bool(body["featured"])
     if "status" in body:
         set_fields["status"] = body["status"]
     await db.properties.update_one({"id": prop_id}, {"$set": set_fields})
-    return await db.properties.find_one({"id": prop_id}, {"_id": 0})
+
+    # Build notification
+    notif_payload = {"whatsapp_url": ""}
+    if set_fields.get("verified") and not prop.get("verified"):
+        notif_payload = await notify_user(
+            prop["user_id"], "property_verified",
+            f"Votre annonce a été vérifiée ✓",
+            f"Félicitations ! Votre annonce \"{prop['title']}\" est maintenant marquée Vérifiée sur IMORA Tchad.",
+            property_id=prop_id,
+        )
+    elif "status" in body:
+        notif_payload = await notify_user(
+            prop["user_id"], "property_status",
+            f"Statut mis à jour : {body['status']}",
+            f"Le statut de \"{prop['title']}\" est maintenant : {body['status']}.",
+            property_id=prop_id,
+        )
+    updated = await db.properties.find_one({"id": prop_id}, {"_id": 0})
+    return {**updated, "whatsapp_url": notif_payload.get("whatsapp_url", "")}
 
 
 @api_router.get("/admin/payments")
@@ -605,8 +656,19 @@ async def admin_update_payment(payment_id: str, body: dict, request: Request, au
     status = body.get("status")
     if status not in ("pending", "confirmed", "rejected"):
         raise HTTPException(status_code=400, detail="Invalid status")
+    pay = await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    if not pay:
+        raise HTTPException(status_code=404, detail="Not found")
     await db.payments.update_one({"id": payment_id}, {"$set": {"status": status}})
-    return await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    notif_payload = await notify_user(
+        pay["user_id"],
+        f"payment_{status}",
+        f"Paiement {status} ✓" if status == "confirmed" else f"Paiement {status}",
+        f"Votre paiement de {int(pay['amount']):,} XAF ({pay['type']}) via {pay['method']} a été {status}.",
+        payment_id=payment_id,
+    )
+    updated = await db.payments.find_one({"id": payment_id}, {"_id": 0})
+    return {**updated, "whatsapp_url": notif_payload.get("whatsapp_url", "")}
 
 
 @api_router.get("/admin/feedback")
@@ -614,6 +676,75 @@ async def admin_feedback(request: Request, authorization: Optional[str] = Header
     await require_admin(request, authorization)
     items = await db.feedback.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(length=500)
     return items
+
+
+# ============================================================
+# Notifications (user inbox)
+# ============================================================
+@api_router.get("/notifications/mine")
+async def my_notifications(request: Request, authorization: Optional[str] = Header(None)):
+    user = await require_user(request, authorization)
+    items = await db.notifications.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(length=50)
+    return items
+
+
+@api_router.post("/notifications/{nid}/read")
+async def mark_notification_read(nid: str, request: Request, authorization: Optional[str] = Header(None)):
+    user = await require_user(request, authorization)
+    await db.notifications.update_one({"id": nid, "user_id": user["user_id"]}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+# ============================================================
+# Agency analytics
+# ============================================================
+@api_router.get("/agency/analytics")
+async def agency_analytics(request: Request, authorization: Optional[str] = Header(None)):
+    user = await require_user(request, authorization)
+    props = await db.properties.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(length=500)
+    total = len(props)
+    sold = sum(1 for p in props if p.get("status") == "sold")
+    rented = sum(1 for p in props if p.get("status") == "rented")
+    active = sum(1 for p in props if p.get("status") == "active")
+    pending = sum(1 for p in props if p.get("status") == "pending")
+    total_views = sum(p.get("views", 0) for p in props)
+    total_contacts = sum(p.get("contact_count", 0) for p in props)
+    verified = sum(1 for p in props if p.get("verified"))
+
+    # Top listings
+    by_views = sorted(props, key=lambda p: -p.get("views", 0))[:5]
+    by_contacts = sorted(props, key=lambda p: -p.get("contact_count", 0))[:5]
+
+    # Per-type breakdown
+    by_type = {}
+    for p in props:
+        by_type[p["property_type"]] = by_type.get(p["property_type"], 0) + 1
+
+    # Per-month listings (last 6 months)
+    from collections import OrderedDict
+    months = OrderedDict()
+    now = datetime.now(timezone.utc)
+    for i in range(5, -1, -1):
+        d = now.replace(day=1)
+        for _ in range(i):
+            d = (d - timedelta(days=1)).replace(day=1)
+        months[d.strftime("%Y-%m")] = 0
+    for p in props:
+        try:
+            d = datetime.fromisoformat(p["created_at"]).strftime("%Y-%m")
+            if d in months:
+                months[d] += 1
+        except Exception:
+            pass
+
+    return {
+        "total": total, "active": active, "pending": pending, "sold": sold, "rented": rented,
+        "verified": verified, "total_views": total_views, "total_contacts": total_contacts,
+        "by_type": [{"name": k, "value": v} for k, v in by_type.items()],
+        "by_month": [{"month": k, "count": v} for k, v in months.items()],
+        "top_views": [{"title": p["title"], "views": p.get("views", 0), "id": p["id"]} for p in by_views],
+        "top_contacts": [{"title": p["title"], "contacts": p.get("contact_count", 0), "id": p["id"]} for p in by_contacts],
+    }
 
 
 # ============================================================

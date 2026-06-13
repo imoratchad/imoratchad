@@ -113,6 +113,25 @@ const PropertyDetail = () => {
             </>
           )}
 
+          {property.virtual_tour_url && (
+            <>
+              <h2 className="font-heading font-bold text-xl mb-2">Visite virtuelle</h2>
+              <div className="rounded-xl overflow-hidden border border-neutral-200 mb-6 bg-black" data-testid="virtual-tour-embed">
+                {(() => {
+                  const u = property.virtual_tour_url;
+                  // YouTube embed
+                  const yt = u.match(/(?:youtube\.com\/(?:.*v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+                  if (yt) return <iframe className="w-full aspect-video" src={`https://www.youtube.com/embed/${yt[1]}`} title="Visite virtuelle" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />;
+                  // Vimeo
+                  const vm = u.match(/vimeo\.com\/(\d+)/);
+                  if (vm) return <iframe className="w-full aspect-video" src={`https://player.vimeo.com/video/${vm[1]}`} title="Visite virtuelle" frameBorder="0" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />;
+                  // Fallback link
+                  return <div className="p-6 text-center"><a href={u} target="_blank" rel="noopener noreferrer" className="text-[#00B4FF] underline font-bold">Ouvrir la visite virtuelle →</a></div>;
+                })()}
+              </div>
+            </>
+          )}
+
           <h2 className="font-heading font-bold text-xl mb-2">{t("detail.location")}</h2>
           <div className="rounded-xl overflow-hidden border border-neutral-200 mb-6" style={{ height: 320 }}>
             <MapContainer center={[mapCenter.lat, mapCenter.lng]} zoom={hasLoc ? 14 : 12} style={{ height: "100%", width: "100%" }} data-testid="property-map">

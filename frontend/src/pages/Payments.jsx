@@ -6,15 +6,28 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { CONTACTS, formatPrice } from "../lib/constants";
 
+const PACKS = [
+  { id: "boost_48h", title: "Boost Express 48h", subtitle: "Mise en avant immédiate", price: 5000, type: "boost", color: "#FF6B1A", features: ["Annonce affichée en vedette pendant 48h", "Position privilégiée dans les recherches", "Notification IA aux utilisateurs intéressés", "Activation sous 24h après paiement"], badge: "Particuliers" },
+  { id: "verif_express", title: "Vérification Accélérée", subtitle: "Badge bleu en 24h", price: 10000, type: "verification", color: "#00B4FF", features: ["Vérification documents en 24h", "Badge ✓ Vérifié visible sur l'annonce", "Augmentation du taux de contact +60%", "Validité illimitée"], badge: "Recommandé" },
+  { id: "agence_pro", title: "Pack Agence Vérifiée", subtitle: "Mensuel — 10 annonces boostées", price: 30000, type: "agency_subscription", color: "#0A0A0A", features: ["10 annonces en vedette / mois", "Badge agence vérifiée", "Statistiques avancées", "Support prioritaire WhatsApp", "Logo agence affiché"], badge: "Pro" },
+];
+
 const Payments = () => {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [form, setForm] = useState({ type: "premium", amount: 5000, method: "airtel", transaction_id: "", payer_phone: "", note: "" });
+  const [selectedPack, setSelectedPack] = useState(null);
+  const [form, setForm] = useState({ type: "boost", amount: 5000, method: "airtel", transaction_id: "", payer_phone: "", note: "" });
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
     if (user) api.get("/payments/mine").then(({ data }) => setHistory(data));
   }, [user]);
+
+  const choosePack = (pack) => {
+    setSelectedPack(pack.id);
+    setForm({ ...form, type: pack.type, amount: pack.price, note: pack.title });
+    setTimeout(() => document.getElementById("pay-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+  };
 
   const submit = async () => {
     if (!user) { toast.error("Connectez-vous pour soumettre un paiement"); return; }
@@ -31,6 +44,24 @@ const Payments = () => {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <h1 className="font-heading font-black text-3xl sm:text-4xl tracking-tighter">{t("payments.title")}</h1>
       <p className="text-sm text-neutral-500 mb-6">{t("payments.subtitle")}</p>
+
+      {/* PACKS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8">
+        {PACKS.map((p) => (
+          <div key={p.id} data-testid={`pack-${p.id}`} className={`relative bg-white border-2 rounded-xl p-5 transition cursor-pointer ${selectedPack === p.id ? "border-[#FF6B1A] shadow-lg" : "border-neutral-200 hover:border-neutral-400"}`} onClick={() => choosePack(p)}>
+            <span className="absolute -top-2 right-3 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded text-white" style={{ background: p.color }}>{p.badge}</span>
+            <h3 className="font-heading font-extrabold text-xl tracking-tight">{p.title}</h3>
+            <p className="text-xs text-neutral-500 mb-3">{p.subtitle}</p>
+            <div className="font-heading font-black text-3xl mb-3" style={{ color: p.color }}>{formatPrice(p.price)}</div>
+            <ul className="space-y-1.5 text-sm">
+              {p.features.map((f, i) => (
+                <li key={i} className="flex gap-2"><Check className="h-4 w-4 text-green-600 shrink-0 mt-0.5" /><span>{f}</span></li>
+              ))}
+            </ul>
+            <button data-testid={`select-pack-${p.id}`} className={`w-full mt-4 font-bold h-10 rounded-lg ${selectedPack === p.id ? "bg-[#FF6B1A] text-white" : "bg-neutral-100 hover:bg-neutral-200"}`}>{selectedPack === p.id ? "Sélectionné ✓" : "Choisir ce pack"}</button>
+          </div>
+        ))}
+      </div>
 
       {/* Instructions */}
       <div className="bg-white border border-neutral-200 rounded-xl p-5 mb-6">
@@ -56,7 +87,7 @@ const Payments = () => {
       </div>
 
       {/* Form */}
-      <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4">
+      <div id="pay-form" className="bg-white border border-neutral-200 rounded-xl p-5 space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="imora-label">{t("payments.type")}</label>
