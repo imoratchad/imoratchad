@@ -111,6 +111,10 @@ class Property(BaseModel):
     contact_whatsapp: Optional[str] = ""
     contact_email: Optional[str] = ""
     status: PropertyStatus = "active"
+    sold_at: Optional[str] = None
+    rented_at: Optional[str] = None
+    testimonial: Optional[str] = ""  # Client testimonial after transaction
+    testimonial_author: Optional[str] = ""
     verified: bool = False
     featured: bool = False
     views: int = 0
@@ -455,13 +459,66 @@ async def featured_properties():
 
 
 @api_router.get("/properties/archives")
-async def archived_properties(transaction_type: Optional[str] = None, limit: int = 60):
+async def archived_properties(
+    transaction_type: Optional[str] = None,
+    neighborhood: Optional[str] = None,
+    year: Optional[int] = None,
+    limit: int = 60,
+):
     """Return sold and rented properties — public 'success stories' archive."""
     q = {"status": {"$in": ["sold", "rented"]}}
     if transaction_type:
         q["transaction_type"] = transaction_type
+    if neighborhood:
+        q["neighborhood"] = neighborhood
+    if year:
+        q["$or"] = [
+            {"sold_at": {"$gte": f"{year}-01-01", "$lt": f"{year+1}-01-01"}},
+            {"rented_at": {"$gte": f"{year}-01-01", "$lt": f"{year+1}-01-01"}},
+        ]
     items = await db.properties.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(length=limit)
     return items
+
+
+@api_router.get("/properties/archives/stats")
+async def archives_stats():
+    """Public archive stats — used for trust building on the home page."""
+    archives = await db.properties.find(
+        {"status": {"$in": ["sold", "rented"]}}, {"_id": 0}
+    ).to_list(length=2000)
+    sold = [p for p in archives if p["status"] == "sold"]
+    rented = [p for p in archives if p["status"] == "rented"]
+    current_year = datetime.now(timezone.utc).year
+    this_year = 0
+    by_year = {}
+    by_neighborhood = {}
+    by_month = {}
+    for p in archives:
+        ts = p.get("sold_at") or p.get("rented_at") or p.get("created_at")
+        try:
+            y = int(ts[:4])
+            ym = ts[:7]
+        except Exception:
+            continue
+        by_year[y] = by_year.get(y, 0) + 1
+        by_month[ym] = by_month.get(ym, 0) + 1
+        if y == current_year:
+            this_year += 1
+        n = p.get("neighborhood") or "Autre"
+        by_neighborhood[n] = by_neighborhood.get(n, 0) + 1
+    return {
+        "total": len(archives),
+        "sold": len(sold),
+        "rented": len(rented),
+        "this_year": this_year,
+        "current_year": current_year,
+        "by_year": [{"year": k, "count": v} for k, v in sorted(by_year.items())],
+        "by_month": [{"month": k, "count": v} for k, v in sorted(by_month.items())[-12:]],
+        "top_neighborhoods": sorted(
+            [{"name": k, "count": v} for k, v in by_neighborhood.items()],
+            key=lambda x: -x["count"]
+        )[:6],
+    }
 
 
 @api_router.post("/properties")
@@ -654,7 +711,17 @@ async def admin_verify_property(prop_id: str, body: dict, request: Request, auth
     if "featured" in body:
         set_fields["featured"] = bool(body["featured"])
     if "status" in body:
-        set_fields["status"] = body["status"]
+        new_status = body["status"]
+        set_fields["status"] = new_status
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if new_status == "sold" and not prop.get("sold_at"):
+            set_fields["sold_at"] = now_iso
+        if new_status == "rented" and not prop.get("rented_at"):
+            set_fields["rented_at"] = now_iso
+    if "testimonial" in body:
+        set_fields["testimonial"] = body["testimonial"]
+    if "testimonial_author" in body:
+        set_fields["testimonial_author"] = body["testimonial_author"]
     await db.properties.update_one({"id": prop_id}, {"$set": set_fields})
 
     # Build notification

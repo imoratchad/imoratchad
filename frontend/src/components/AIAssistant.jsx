@@ -47,7 +47,7 @@ const AIAssistant = () => {
       <button
         data-testid="ai-assistant-fab"
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 md:bottom-6 right-4 z-30 bg-[#00B4FF] hover:bg-[#0099D9] text-white rounded-full shadow-lg p-4 flex items-center gap-2 font-bold transition active:scale-95"
+        className="fixed bottom-24 md:bottom-6 left-4 md:left-6 z-30 bg-[#00B4FF] hover:bg-[#0099D9] text-white rounded-full shadow-lg p-4 flex items-center gap-2 font-bold transition active:scale-95"
         aria-label="Open IMORA Assistant"
       >
         <Sparkles className="h-5 w-5" />

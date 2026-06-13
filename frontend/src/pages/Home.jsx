@@ -23,6 +23,7 @@ const Home = () => {
   const [featured, setFeatured] = useState([]);
   const [recent, setRecent] = useState([]);
   const [archives, setArchives] = useState([]);
+  const [archiveStats, setArchiveStats] = useState(null);
   const [q, setQ] = useState("");
   const [transaction, setTransaction] = useState("");
 
@@ -30,6 +31,7 @@ const Home = () => {
     api.get("/properties/featured").then(({ data }) => setFeatured(data)).catch(() => {});
     api.get("/properties?limit=8").then(({ data }) => setRecent(data)).catch(() => {});
     api.get("/properties/archives?limit=6").then(({ data }) => setArchives(data)).catch(() => {});
+    api.get("/properties/archives/stats").then(({ data }) => setArchiveStats(data)).catch(() => {});
   }, []);
 
   const doSearch = () => {
@@ -132,6 +134,11 @@ const Home = () => {
               <div>
                 <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#00B4FF] flex items-center gap-2"><Trophy className="h-3 w-3" /> Transactions réussies</div>
                 <h2 className="font-heading font-black text-2xl sm:text-3xl tracking-tight">Récemment vendus & loués</h2>
+                {archiveStats?.this_year > 0 && (
+                  <p className="text-sm text-white/70 mt-1">
+                    <span className="text-[#FF6B1A] font-bold">{archiveStats.this_year} biens transactés</span> en {archiveStats.current_year} sur IMORA Tchad
+                  </p>
+                )}
               </div>
               <Link to="/archives" data-testid="see-all-archives" className="text-sm font-bold text-[#FF6B1A] hover:underline">Voir tout →</Link>
             </div>

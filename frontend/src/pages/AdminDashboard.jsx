@@ -56,7 +56,18 @@ const AdminDashboard = () => {
     refresh();
   };
   const setStatus = async (id, status) => {
-    const { data } = await api.put(`/admin/properties/${id}/verify`, { verified: properties.find(p => p.id === id)?.verified || false, status });
+    const prop = properties.find(p => p.id === id);
+    let payload = { verified: prop?.verified || false, status };
+    // Prompt for testimonial when marking sold/rented
+    if ((status === "sold" || status === "rented") && !prop?.testimonial) {
+      const testimonial = window.prompt(`Témoignage client (optionnel) pour "${prop?.title}" :`);
+      if (testimonial && testimonial.trim()) {
+        const author = window.prompt("Nom du témoin (optionnel) :") || "";
+        payload.testimonial = testimonial.trim();
+        payload.testimonial_author = author.trim();
+      }
+    }
+    const { data } = await api.put(`/admin/properties/${id}/verify`, payload);
     toast.success("Statut mis à jour", {
       action: data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
       duration: 8000,

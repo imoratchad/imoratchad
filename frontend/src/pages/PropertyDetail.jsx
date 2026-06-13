@@ -113,6 +113,14 @@ const PropertyDetail = () => {
             </>
           )}
 
+          {property.testimonial && (property.status === "sold" || property.status === "rented") && (
+            <div className="bg-gradient-to-br from-[#0A0A0A] to-neutral-800 text-white rounded-xl p-5 mb-6">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-[#00B4FF] mb-2">Témoignage client · Transaction réussie</div>
+              <p className="text-lg italic font-heading">"{property.testimonial}"</p>
+              {property.testimonial_author && <p className="mt-2 text-sm font-bold text-[#FF6B1A]">— {property.testimonial_author}</p>}
+            </div>
+          )}
+
           {property.virtual_tour_url && (
             <>
               <h2 className="font-heading font-bold text-xl mb-2">Visite virtuelle</h2>
