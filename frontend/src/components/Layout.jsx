@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Home as HomeIcon, Search, Map, PlusCircle, User, MessageCircle, Globe, LogOut, ShieldCheck, Phone, CreditCard, Star } from "lucide-react";
-import { LOGO_URL } from "../lib/api";
+import { Home as HomeIcon, Search, Map, PlusCircle, User, MessageCircle, Globe, LogOut, ShieldCheck, Phone, CreditCard, Star, Bell, Trophy } from "lucide-react";
+import { LOGO_URL, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { setLanguage } from "../lib/i18n";
 import AIAssistant from "./AIAssistant";
@@ -33,6 +33,29 @@ const LangSwitcher = () => {
   );
 };
 
+const NotifBell = () => {
+  const { user } = useAuth();
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    const fetchUnread = () => {
+      api.get("/notifications/mine").then(({ data }) => setCount(data.filter(n => !n.read).length)).catch(() => {});
+    };
+    fetchUnread();
+    const i = setInterval(fetchUnread, 30000);
+    return () => clearInterval(i);
+  }, [user]);
+  if (!user) return null;
+  return (
+    <Link to={user.role === "admin" ? "/admin" : "/dashboard"} data-testid="notif-bell" className="relative p-2 rounded-lg bg-white/10 hover:bg-white/20" aria-label="Notifications">
+      <Bell className="h-4 w-4" />
+      {count > 0 && (
+        <span className="absolute -top-1 -right-1 bg-[#FF6B1A] text-white text-[10px] font-bold rounded-full h-4 min-w-[16px] px-1 flex items-center justify-center" data-testid="notif-bell-count">{count > 9 ? "9+" : count}</span>
+      )}
+    </Link>
+  );
+};
+
 const Header = () => {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
@@ -52,12 +75,14 @@ const Header = () => {
           <NavLink to="/" data-testid="nav-home" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.home")}</NavLink>
           <NavLink to="/search" data-testid="nav-search" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.search")}</NavLink>
           <NavLink to="/map" data-testid="nav-map" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.map")}</NavLink>
+          <NavLink to="/archives" data-testid="nav-archives" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>Vendus & Loués</NavLink>
           <NavLink to="/publish" data-testid="nav-publish" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.publish")}</NavLink>
           <NavLink to="/contact" data-testid="nav-contact" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.contact")}</NavLink>
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <LangSwitcher />
+          <NotifBell />
           {user ? (
             <div className="flex items-center gap-2">
               <Link to={user.role === "admin" ? "/admin" : "/dashboard"} data-testid="nav-dashboard" className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm">
@@ -86,7 +111,7 @@ const BottomNav = () => {
     { to: "/", icon: HomeIcon, label: t("nav.home"), testid: "bottom-nav-home" },
     { to: "/search", icon: Search, label: t("nav.search"), testid: "bottom-nav-search" },
     { to: "/publish", icon: PlusCircle, label: t("nav.publish"), testid: "bottom-nav-publish", highlight: true },
-    { to: "/map", icon: Map, label: t("nav.map"), testid: "bottom-nav-map" },
+    { to: "/archives", icon: Trophy, label: "Archives", testid: "bottom-nav-archives" },
     { to: user ? (user.role === "admin" ? "/admin" : "/dashboard") : "/login", icon: User, label: user ? t("nav.profile") : t("nav.login"), testid: "bottom-nav-profile" },
   ];
   return (
@@ -128,6 +153,7 @@ const Footer = () => {
           <h4 className="text-white font-heading font-bold mb-2 text-sm uppercase tracking-widest">Liens</h4>
           <ul className="text-sm space-y-1">
             <li><Link to="/search" className="hover:text-white">{t("nav.search")}</Link></li>
+            <li><Link to="/archives" className="hover:text-white">Vendus & Loués</Link></li>
             <li><Link to="/publish" className="hover:text-white">{t("nav.publish")}</Link></li>
             <li><Link to="/payments" className="hover:text-white">{t("nav.payments")}</Link></li>
             <li><Link to="/feedback" className="hover:text-white">{t("nav.feedback")}</Link></li>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Search, ShieldCheck, MapPin, Sparkles, CreditCard, Star, ArrowRight } from "lucide-react";
+import { Search, ShieldCheck, MapPin, Sparkles, CreditCard, Star, ArrowRight, Trophy } from "lucide-react";
 import { api, LOGO_URL } from "../lib/api";
 import { ARRONDISSEMENTS, ALL_PROPERTY_TYPES, TRANSACTION_TYPES } from "../lib/constants";
 import PropertyCard from "../components/PropertyCard";
@@ -22,12 +22,14 @@ const Home = () => {
   const navigate = useNavigate();
   const [featured, setFeatured] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [archives, setArchives] = useState([]);
   const [q, setQ] = useState("");
   const [transaction, setTransaction] = useState("");
 
   useEffect(() => {
     api.get("/properties/featured").then(({ data }) => setFeatured(data)).catch(() => {});
     api.get("/properties?limit=8").then(({ data }) => setRecent(data)).catch(() => {});
+    api.get("/properties/archives?limit=6").then(({ data }) => setArchives(data)).catch(() => {});
   }, []);
 
   const doSearch = () => {
@@ -118,6 +120,24 @@ const Home = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
             {recent.slice(0, 8).map((p) => <PropertyCard key={p.id} property={p} />)}
+          </div>
+        </section>
+      )}
+
+      {/* Recently sold / rented — social proof */}
+      {archives.length > 0 && (
+        <section className="bg-[#0A0A0A] text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+            <div className="flex items-end justify-between mb-6">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#00B4FF] flex items-center gap-2"><Trophy className="h-3 w-3" /> Transactions réussies</div>
+                <h2 className="font-heading font-black text-2xl sm:text-3xl tracking-tight">Récemment vendus & loués</h2>
+              </div>
+              <Link to="/archives" data-testid="see-all-archives" className="text-sm font-bold text-[#FF6B1A] hover:underline">Voir tout →</Link>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+              {archives.slice(0, 6).map((p) => <PropertyCard key={p.id} property={p} />)}
+            </div>
           </div>
         </section>
       )}

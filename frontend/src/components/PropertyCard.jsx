@@ -18,8 +18,16 @@ const PropertyCard = ({ property, featured = false }) => {
           src={photo}
           alt={property.title}
           loading="lazy"
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${property.status === "sold" || property.status === "rented" ? "grayscale" : ""}`}
         />
+        {/* Sold / Rented overlay */}
+        {(property.status === "sold" || property.status === "rented") && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className={`-rotate-12 px-6 py-2 border-4 font-heading font-black text-3xl tracking-tighter ${property.status === "sold" ? "border-[#FF6B1A] text-[#FF6B1A] bg-white/85" : "border-[#00B4FF] text-[#00B4FF] bg-white/85"}`}>
+              {property.status === "sold" ? "VENDU" : "LOUÉ"}
+            </div>
+          </div>
+        )}
         {property.verified && (
           <span className="absolute top-3 start-3 imora-badge-verified" data-testid={`verified-badge-${property.id}`}>
             <ShieldCheck className="h-3 w-3" /> {t("card.verified")}

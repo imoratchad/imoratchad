@@ -18,6 +18,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import MapPage from "@/pages/MapPage";
 import Contact from "@/pages/Contact";
 import Payments from "@/pages/Payments";
+import Archives from "@/pages/Archives";
 import Feedback from "@/pages/Feedback";
 
 const AppRouter = () => {
@@ -40,6 +41,7 @@ const AppRouter = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/payments" element={<Payments />} />
         <Route path="/feedback" element={<Feedback />} />
+        <Route path="/archives" element={<Archives />} />
         <Route path="*" element={<Home />} />
       </Routes>
     </Layout>

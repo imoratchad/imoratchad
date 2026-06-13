@@ -23,7 +23,25 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="IMORA Tchad API")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(_app):
+    # Startup
+    # Background cleanup: archive notifications older than 90 days
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    try:
+        result = await db.notifications.delete_many({"created_at": {"$lt": cutoff}})
+        if result.deleted_count:
+            logging.info(f"Archived {result.deleted_count} old notifications")
+    except Exception:
+        logging.exception("Notification cleanup failed")
+    yield
+    # Shutdown
+    client.close()
+
+
+app = FastAPI(title="IMORA Tchad API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
@@ -436,9 +454,25 @@ async def featured_properties():
     return items
 
 
+@api_router.get("/properties/archives")
+async def archived_properties(transaction_type: Optional[str] = None, limit: int = 60):
+    """Return sold and rented properties — public 'success stories' archive."""
+    q = {"status": {"$in": ["sold", "rented"]}}
+    if transaction_type:
+        q["transaction_type"] = transaction_type
+    items = await db.properties.find(q, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(length=limit)
+    return items
+
+
 @api_router.post("/properties")
 async def create_property(payload: PropertyCreate, request: Request, authorization: Optional[str] = Header(None)):
     user = await require_user(request, authorization)
+    # Photo validation: max 10 photos, each ≤ 5 MB
+    if len(payload.photos) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 photos par annonce")
+    for ph in payload.photos:
+        if len(ph) > 5 * 1024 * 1024 * 1.4:  # base64 inflates ~33%
+            raise HTTPException(status_code=400, detail="Chaque photo doit faire moins de 5 MB")
     prop = Property(user_id=user["user_id"], **payload.model_dump())
     await db.properties.insert_one(prop.model_dump())
     return prop.model_dump()
@@ -834,8 +868,3 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
