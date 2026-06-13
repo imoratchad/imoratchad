@@ -6,18 +6,15 @@ import App from "@/App";
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      staleTime: 60_000,
-      refetchOnWindowFocus: false,
-    },
+    queries: { staleTime: 60_000, refetchOnWindowFocus: false },
   },
 });
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
+// NOTE: React.StrictMode disabled because react-leaflet 4.x re-initializes MapContainer
+// twice in dev mode, breaking the map.
 root.render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </React.StrictMode>,
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>
 );

@@ -1,54 +1,69 @@
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { Toaster } from "sonner";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import "@/lib/i18n";
+import { AuthProvider } from "@/lib/auth";
+import Layout from "@/components/Layout";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+import Home from "@/pages/Home";
+import Search from "@/pages/Search";
+import PropertyDetail from "@/pages/PropertyDetail";
+import Publish from "@/pages/Publish";
+import Dashboard from "@/pages/Dashboard";
+import AdminDashboard from "@/pages/AdminDashboard";
+import Login from "@/pages/Login";
+import AuthCallback from "@/pages/AuthCallback";
+import MapPage from "@/pages/MapPage";
+import Contact from "@/pages/Contact";
+import Payments from "@/pages/Payments";
+import Feedback from "@/pages/Feedback";
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+const AppRouter = () => {
+  const location = useLocation();
+  // Detect OAuth callback via URL fragment synchronously (before render of other routes)
+  if (location.hash?.includes("session_id=")) {
+    return <AuthCallback />;
+  }
   return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Layout>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/search" element={<Search />} />
+        <Route path="/property/:id" element={<PropertyDetail />} />
+        <Route path="/publish" element={<Publish />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/map" element={<MapPage />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/payments" element={<Payments />} />
+        <Route path="/feedback" element={<Feedback />} />
+        <Route path="*" element={<Home />} />
+      </Routes>
+    </Layout>
   );
 };
 
 function App() {
+  useEffect(() => {
+    // Register PWA service worker
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+      });
+    }
+  }, []);
+
   return (
     <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRouter />
+          <Toaster position="top-right" richColors />
+        </BrowserRouter>
+      </AuthProvider>
     </div>
   );
 }

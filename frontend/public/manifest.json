@@ -1,0 +1,26 @@
+{
+  "name": "IMORA Tchad - Plateforme Immobilière",
+  "short_name": "IMORA",
+  "description": "La plateforme immobilière du futur au Tchad",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAFAFA",
+  "theme_color": "#0A0A0A",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://customer-assets.emergentagent.com/job_0d3a448a-6931-4cac-bbb2-34a1ea7d48ef/artifacts/48f72vfn_1781186527624%20%281%29.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "https://customer-assets.emergentagent.com/job_0d3a448a-6931-4cac-bbb2-34a1ea7d48ef/artifacts/48f72vfn_1781186527624%20%281%29.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ],
+  "lang": "fr",
+  "categories": ["business", "lifestyle", "shopping"]
+}
