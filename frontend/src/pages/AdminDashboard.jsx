@@ -55,6 +55,19 @@ const AdminDashboard = () => {
     toast.success(featured ? "Mis en avant" : "Retiré");
     refresh();
   };
+  const editTags = async (id) => {
+    const prop = properties.find(p => p.id === id);
+    const current = (prop?.tags || []).join(", ");
+    const input = window.prompt(
+      `Tags pour "${prop?.title}" (séparés par des virgules, max 5) :\n\nSuggestions : Premium, Coup de cœur, Vendu en 1 semaine, Nouveau, Prix réduit, Exclusivité, À ne pas manquer`,
+      current
+    );
+    if (input === null) return;
+    const tags = input.split(",").map(t => t.trim()).filter(Boolean).slice(0, 5);
+    await api.put(`/admin/properties/${id}/verify`, { verified: prop?.verified || false, tags });
+    toast.success(`${tags.length} tag(s) enregistré(s)`);
+    refresh();
+  };
   const setStatus = async (id, status) => {
     const prop = properties.find(p => p.id === id);
     let payload = { verified: prop?.verified || false, status };
@@ -89,8 +102,13 @@ const AdminDashboard = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-      <h1 className="font-heading font-black text-3xl sm:text-4xl tracking-tighter mb-1">{t("admin.dashboard")}</h1>
-      <p className="text-sm text-neutral-500 mb-6">IMORA Tchad — Contrôle complet</p>
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-1">
+        <div>
+          <h1 className="font-heading font-black text-3xl sm:text-4xl tracking-tighter">{t("admin.dashboard")}</h1>
+          <p className="text-sm text-neutral-500">IMORA Tchad — Contrôle complet</p>
+        </div>
+        <Link to="/admin/monthly-report" data-testid="link-monthly-report" className="imora-btn-secondary !h-10 !px-4 text-sm">📊 Rapport mensuel</Link>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
@@ -136,6 +154,7 @@ const AdminDashboard = () => {
               </div>
               <button onClick={() => toggleVerified(p.id, !p.verified)} data-testid={`verify-${p.id}`} className={`text-xs font-bold px-3 py-1.5 rounded-full ${p.verified ? "bg-[#00B4FF] text-white" : "bg-neutral-100"}`}><BadgeCheck className="h-3 w-3 inline" /> {p.verified ? t("admin.unverify") : t("admin.verify")}</button>
               <button onClick={() => toggleFeatured(p.id, !p.featured)} data-testid={`feature-${p.id}`} className={`text-xs font-bold px-3 py-1.5 rounded-full ${p.featured ? "bg-[#FF6B1A] text-white" : "bg-neutral-100"}`}><Star className="h-3 w-3 inline" /></button>
+              <button onClick={() => editTags(p.id)} data-testid={`tag-${p.id}`} className={`text-xs font-bold px-3 py-1.5 rounded-full ${p.tags?.length ? "bg-[#FF6B1A] text-white" : "bg-neutral-100"}`} title={p.tags?.join(", ")}>🏷️ {p.tags?.length || 0}</button>
               <select value={p.status} onChange={(e) => setStatus(p.id, e.target.value)} data-testid={`status-${p.id}`} className="text-xs border border-neutral-200 rounded px-2 py-1">
                 <option value="active">active</option>
                 <option value="pending">pending</option>

@@ -38,6 +38,13 @@ const PropertyCard = ({ property, featured = false }) => {
         </span>
       </div>
       <div className="p-4">
+        {property.tags?.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2">
+            {property.tags.map((t, i) => (
+              <span key={i} className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#FF6B1A]/10 text-[#FF6B1A] border border-[#FF6B1A]/30" data-testid={`tag-${i}`}>{t}</span>
+            ))}
+          </div>
+        )}
         <div className="flex items-baseline justify-between gap-2 mb-1">
           <div className="text-[#FF6B1A] font-heading font-extrabold text-xl">{formatPrice(property.price)}</div>
           {property.negotiable && <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">{t("card.negotiable")}</span>}

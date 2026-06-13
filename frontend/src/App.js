@@ -18,6 +18,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import MapPage from "@/pages/MapPage";
 import Contact from "@/pages/Contact";
 import Payments from "@/pages/Payments";
+import MonthlyReport from "@/pages/MonthlyReport";
 import Archives from "@/pages/Archives";
 import Feedback from "@/pages/Feedback";
 
@@ -42,6 +43,7 @@ const AppRouter = () => {
         <Route path="/payments" element={<Payments />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/archives" element={<Archives />} />
+        <Route path="/admin/monthly-report" element={<MonthlyReport />} />
         <Route path="*" element={<Home />} />
       </Routes>
     </Layout>

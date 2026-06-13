@@ -115,6 +115,7 @@ class Property(BaseModel):
     rented_at: Optional[str] = None
     testimonial: Optional[str] = ""  # Client testimonial after transaction
     testimonial_author: Optional[str] = ""
+    tags: List[str] = []  # admin tags: "Premium", "Coup de cœur", "Vendu en 1 semaine", etc.
     verified: bool = False
     featured: bool = False
     views: int = 0
@@ -523,6 +524,7 @@ async def archives_stats():
 
 @api_router.post("/properties")
 async def create_property(payload: PropertyCreate, request: Request, authorization: Optional[str] = Header(None)):
+    import hashlib
     user = await require_user(request, authorization)
     # Photo validation: max 10 photos, each ≤ 5 MB
     if len(payload.photos) > 10:
@@ -530,8 +532,24 @@ async def create_property(payload: PropertyCreate, request: Request, authorizati
     for ph in payload.photos:
         if len(ph) > 5 * 1024 * 1024 * 1.4:  # base64 inflates ~33%
             raise HTTPException(status_code=400, detail="Chaque photo doit faire moins de 5 MB")
+    # Duplicate photo detection (SHA256)
+    photo_hashes = []
+    for ph in payload.photos:
+        h = hashlib.sha256(ph.encode("utf-8")).hexdigest()
+        photo_hashes.append(h)
+        # Reject if a photo with the same hash exists in a DIFFERENT user's active property
+        existing = await db.photo_hashes.find_one({"hash": h, "user_id": {"$ne": user["user_id"]}})
+        if existing:
+            raise HTTPException(status_code=400, detail="Une photo identique existe déjà sur la plateforme")
     prop = Property(user_id=user["user_id"], **payload.model_dump())
     await db.properties.insert_one(prop.model_dump())
+    # Store hashes for future dedup
+    for h in photo_hashes:
+        await db.photo_hashes.update_one(
+            {"hash": h},
+            {"$set": {"hash": h, "user_id": user["user_id"], "property_id": prop.id, "created_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True
+        )
     return prop.model_dump()
 
 
@@ -722,6 +740,8 @@ async def admin_verify_property(prop_id: str, body: dict, request: Request, auth
         set_fields["testimonial"] = body["testimonial"]
     if "testimonial_author" in body:
         set_fields["testimonial_author"] = body["testimonial_author"]
+    if "tags" in body and isinstance(body["tags"], list):
+        set_fields["tags"] = [str(t)[:40] for t in body["tags"][:5]]  # max 5 tags, max 40 chars each
     await db.properties.update_one({"id": prop_id}, {"$set": set_fields})
 
     # Build notification
@@ -770,6 +790,46 @@ async def admin_update_payment(payment_id: str, body: dict, request: Request, au
     )
     updated = await db.payments.find_one({"id": payment_id}, {"_id": 0})
     return {**updated, "whatsapp_url": notif_payload.get("whatsapp_url", "")}
+
+
+@api_router.get("/admin/monthly-report")
+async def admin_monthly_report(year: Optional[int] = None, month: Optional[int] = None, request: Request = None, authorization: Optional[str] = Header(None)):
+    await require_admin(request, authorization)
+    now = datetime.now(timezone.utc)
+    y = year or now.year
+    m = month or now.month
+    start = f"{y:04d}-{m:02d}-01"
+    next_month = (datetime(y, m, 1) + timedelta(days=32)).replace(day=1)
+    end = next_month.strftime("%Y-%m-%d")
+
+    # Properties added this month
+    new_props = await db.properties.count_documents({"created_at": {"$gte": start, "$lt": end}})
+    # Sold + rented this month
+    sold = await db.properties.find({"sold_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=500)
+    rented = await db.properties.find({"rented_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=500)
+    # Verified this month (approximate via property creation)
+    verified = await db.properties.count_documents({"verified": True, "created_at": {"$gte": start, "$lt": end}})
+    # New users
+    new_users = await db.users.count_documents({"created_at": {"$gte": start, "$lt": end}})
+    new_agencies = await db.users.count_documents({"role": "agence", "created_at": {"$gte": start, "$lt": end}})
+    # Payments
+    pays = await db.payments.find({"status": "confirmed", "created_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=500)
+    revenue = sum(p.get("amount", 0) for p in pays)
+    return {
+        "year": y, "month": m,
+        "month_label": ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"][m-1],
+        "new_listings": new_props,
+        "sold_count": len(sold),
+        "rented_count": len(rented),
+        "verified_count": verified,
+        "new_users": new_users,
+        "new_agencies": new_agencies,
+        "revenue": revenue,
+        "sold_total_value": sum(p.get("price", 0) for p in sold),
+        "rented_total_value": sum(p.get("price", 0) for p in rented),
+        "top_sold": sorted(sold, key=lambda p: -p.get("price", 0))[:3],
+        "top_rented": sorted(rented, key=lambda p: -p.get("price", 0))[:3],
+    }
 
 
 @api_router.get("/admin/feedback")
