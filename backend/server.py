@@ -485,7 +485,8 @@ async def archived_properties(
 async def archives_stats():
     """Public archive stats — used for trust building on the home page."""
     archives = await db.properties.find(
-        {"status": {"$in": ["sold", "rented"]}}, {"_id": 0}
+        {"status": {"$in": ["sold", "rented"]}},
+        {"_id": 0, "status": 1, "sold_at": 1, "rented_at": 1, "created_at": 1, "neighborhood": 1}
     ).to_list(length=2000)
     sold = [p for p in archives if p["status"] == "sold"]
     rented = [p for p in archives if p["status"] == "rented"]
@@ -687,8 +688,11 @@ async def admin_stats(request: Request, authorization: Optional[str] = Header(No
     verified_properties = await db.properties.count_documents({"verified": True})
     pending_properties = await db.properties.count_documents({"status": "pending"})
     pending_payments = await db.payments.count_documents({"status": "pending"})
-    confirmed_payments = await db.payments.find({"status": "confirmed"}, {"_id": 0, "amount": 1}).to_list(length=10000)
-    revenue = sum(p.get("amount", 0) for p in confirmed_payments)
+    confirmed_payments = await db.payments.aggregate([
+        {"$match": {"status": "confirmed"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(length=1)
+    revenue = confirmed_payments[0]["total"] if confirmed_payments else 0
     # active sessions
     now = datetime.now(timezone.utc)
     active_sessions = await db.user_sessions.count_documents({"expires_at": {"$gt": now}})
@@ -805,8 +809,14 @@ async def admin_monthly_report(year: Optional[int] = None, month: Optional[int] 
     # Properties added this month
     new_props = await db.properties.count_documents({"created_at": {"$gte": start, "$lt": end}})
     # Sold + rented this month
-    sold = await db.properties.find({"sold_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=500)
-    rented = await db.properties.find({"rented_at": {"$gte": start, "$lt": end}}, {"_id": 0}).to_list(length=500)
+    sold = await db.properties.find(
+        {"sold_at": {"$gte": start, "$lt": end}},
+        {"_id": 0, "id": 1, "title": 1, "price": 1, "property_type": 1, "neighborhood": 1}
+    ).to_list(length=500)
+    rented = await db.properties.find(
+        {"rented_at": {"$gte": start, "$lt": end}},
+        {"_id": 0, "id": 1, "title": 1, "price": 1, "property_type": 1, "neighborhood": 1}
+    ).to_list(length=500)
     # Verified this month (approximate via property creation)
     verified = await db.properties.count_documents({"verified": True, "created_at": {"$gte": start, "$lt": end}})
     # New users
@@ -862,7 +872,10 @@ async def mark_notification_read(nid: str, request: Request, authorization: Opti
 @api_router.get("/agency/analytics")
 async def agency_analytics(request: Request, authorization: Optional[str] = Header(None)):
     user = await require_user(request, authorization)
-    props = await db.properties.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(length=500)
+    props = await db.properties.find(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "id": 1, "title": 1, "status": 1, "views": 1, "contact_count": 1, "verified": 1, "property_type": 1, "created_at": 1}
+    ).to_list(length=500)
     total = len(props)
     sold = sum(1 for p in props if p.get("status") == "sold")
     rented = sum(1 for p in props if p.get("status") == "rented")
