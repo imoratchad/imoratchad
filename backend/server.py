@@ -374,13 +374,23 @@ async def list_properties(
     if max_price is not None: price_q["$lte"] = max_price
     if price_q: query["price"] = price_q
     if min_area is not None:
-        query["$or"] = [{"land_area": {"$gte": min_area}}, {"living_area": {"$gte": min_area}}]
+        area_clause = [{"land_area": {"$gte": min_area}}, {"living_area": {"$gte": min_area}}]
+        if "$or" in query:
+            query = {"$and": [{"$or": query.pop("$or")}, {"$or": area_clause}, query]}
+        else:
+            query["$or"] = area_clause
     if q:
-        query["$or"] = [
+        q_clause = [
             {"title": {"$regex": q, "$options": "i"}},
             {"description": {"$regex": q, "$options": "i"}},
             {"neighborhood": {"$regex": q, "$options": "i"}},
         ]
+        if "$or" in query:
+            query = {"$and": [{"$or": query.pop("$or")}, {"$or": q_clause}, query]}
+        elif "$and" in query:
+            query["$and"].append({"$or": q_clause})
+        else:
+            query["$or"] = q_clause
 
     cursor = db.properties.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
@@ -635,9 +645,13 @@ async def ai_chat(payload: ChatMessage, request: Request, authorization: Optiona
         "appartements, locaux commerciaux), conseiller pour l'achat, la vente ou la location, "
         "expliquer les démarches administratives (titre foncier, arrêté d'attribution, "
         "autorisation d'occuper), et orienter sur les quartiers de N'Djamena. "
-        "Tu réponds en français de manière concise, professionnelle et chaleureuse. "
+        "IMPORTANT — Tu réponds en français en TEXTE BRUT uniquement, sans aucune mise en forme Markdown : "
+        "n'utilise PAS d'astérisques (**), PAS de dièses (#), PAS de tableaux, PAS de blocs de code. "
+        "Ecris naturellement, comme un conseiller humain, en phrases simples et concises. "
+        "Tu peux utiliser des retours à la ligne pour séparer les paragraphes. "
         "Si l'utilisateur cherche un bien, propose des correspondances depuis la liste ci-dessous "
-        "en citant l'ID entre crochets, ou suggère qu'il utilise la recherche avancée si rien ne convient.\n\n"
+        "en citant l'ID entre crochets ainsi : [id-de-l-annonce]. Si rien ne convient, suggère "
+        "d'utiliser la recherche avancée.\n\n"
         f"ANNONCES DISPONIBLES (extrait):\n{context}\n\n"
         "Contacts IMORA : WhatsApp +235 64 92 73 80, Email imoratchad@gmail.com"
     )
