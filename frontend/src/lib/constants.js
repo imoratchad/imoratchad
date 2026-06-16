@@ -7,11 +7,16 @@ export const ARRONDISSEMENTS = {
   "4e Arrondissement": ["Atrone", "Walia", "Toukra", "Gassi"],
   "5e Arrondissement": ["Karkandjeri", "Amtoukoui", "Ambatta", "Dembé"],
   "6e Arrondissement": ["Nguéli", "Djambal Bahr", "Digangali", "Goudji"],
+  "7e Arrondissement": ["Dino", "Boudalbagara", "Bakara", "Etena"],
+  "8e Arrondissement": ["Abatssana", "Béguinage", "Digo"],
+  "9e Arrondissement": ["Lamadji", "Koundoul", "Loumia"],
+  "10e Arrondissement": ["Mandjafa Extension", "Dourbali", "Kournarie", "Kourmanadi"],
   "Autres secteurs et extensions": [
     "Djari", "Djari Extension", "Klessoum", "Mandjafa", "Abena",
     "Chari Logone", "Ndjari", "Tiné", "Walia Extension", "Farcha Extension",
     "Gassi Extension", "Toukra Extension", "Diguel Ryad", "Diguel Est",
-    "Diguel Centre", "Diguel Nord", "Bololo", "CEG de Diguel", "Quartier des Ambassades"
+    "Diguel Centre", "Diguel Nord", "Bololo", "CEG de Diguel",
+    "Quartier des Ambassades", "Avenue Boulevard 40M (Rue de 40M)"
   ],
 };
 

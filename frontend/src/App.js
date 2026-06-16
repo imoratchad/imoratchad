@@ -55,7 +55,17 @@ function App() {
     // Register PWA service worker
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+        navigator.serviceWorker.register("/service-worker.js").then((reg) => {
+          // Check for updates immediately
+          reg.update().catch(() => {});
+          // Listen for new SW taking control and reload once to get fresh JS bundles
+          let refreshing = false;
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            if (refreshing) return;
+            refreshing = true;
+            window.location.reload();
+          });
+        }).catch(() => {});
       });
     }
   }, []);
