@@ -12,6 +12,7 @@ const Publish = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [step, setStep] = useState(1);
+  const [optimizing, setOptimizing] = useState(false);
   const [form, setForm] = useState({
     property_type: "", transaction_type: "",
     title: "", description: "",
@@ -41,14 +42,28 @@ const Publish = () => {
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const max = 1200;
+          // Aggressive optimization for slow 3G/4G connections in Chad
+          const MAX_W = 1100;       // hard max width
+          const TARGET_BYTES = 220 * 1024; // aim for <= 220 KB per photo
           let { width, height } = img;
-          if (width > max) { height = (max / width) * height; width = max; }
+          if (width > MAX_W) { height = (MAX_W / width) * height; width = MAX_W; }
           const canvas = document.createElement("canvas");
-          canvas.width = width; canvas.height = height;
+          canvas.width = width;
+          canvas.height = height;
           const ctx = canvas.getContext("2d");
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.7));
+          // Adaptive quality loop: start at 0.75, drop until file fits target
+          let quality = 0.75;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          // base64 size ≈ raw * 1.37; estimate raw bytes from string length
+          const estimateBytes = (s) => Math.ceil((s.length - "data:image/jpeg;base64,".length) * 0.75);
+          while (estimateBytes(dataUrl) > TARGET_BYTES && quality > 0.35) {
+            quality -= 0.1;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+          resolve({ dataUrl, sizeKb: Math.round(estimateBytes(dataUrl) / 1024), originalKb: Math.round(file.size / 1024), quality: Math.round(quality * 100) });
         };
         img.src = e.target.result;
       };
@@ -57,8 +72,15 @@ const Publish = () => {
 
   const onPhoto = async (e) => {
     const files = Array.from(e.target.files || []);
-    const compressed = await Promise.all(files.map(compressImage));
-    setForm({ ...form, photos: [...form.photos, ...compressed] });
+    if (!files.length) return;
+    setOptimizing(true);
+    const results = await Promise.all(files.map(compressImage));
+    const newPhotos = results.map(r => r.dataUrl);
+    const totalSaved = results.reduce((s, r) => s + (r.originalKb - r.sizeKb), 0);
+    const finalSize = results.reduce((s, r) => s + r.sizeKb, 0);
+    setForm({ ...form, photos: [...form.photos, ...newPhotos] });
+    setOptimizing(false);
+    toast.success(`${results.length} photo(s) optimisée(s) — ${finalSize} KB total (économie : ${totalSaved} KB)`);
   };
 
   const onVideo = (e) => {
@@ -82,7 +104,11 @@ const Publish = () => {
     try {
       const payload = { ...form, price: parseFloat(form.price), rooms: parseInt(form.rooms || 0), bathrooms: parseInt(form.bathrooms || 0), living_rooms: parseInt(form.living_rooms || 0), land_area: parseFloat(form.land_area || 0), living_area: parseFloat(form.living_area || 0) };
       const { data } = await api.post("/properties", payload);
-      toast.success(t("publish.success"));
+      if (data.status === "pending") {
+        toast.success("Annonce soumise ! Elle sera publiée après validation par l'administrateur (sous 24h).", { duration: 8000 });
+      } else {
+        toast.success(t("publish.success"));
+      }
       navigate(`/property/${data.id}`);
     } catch (e) {
       toast.error(e.response?.data?.detail || t("common.error"));
@@ -221,16 +247,20 @@ const Publish = () => {
           <div className="space-y-4">
             <div>
               <label className="imora-label">{t("publish.uploadPhotos")}</label>
+              <div className="bg-[#00B4FF]/5 border border-[#00B4FF]/30 rounded-lg p-3 mb-2 text-xs text-neutral-700 flex items-start gap-2">
+                <span className="text-base">⚡</span>
+                <span><b className="text-[#00B4FF]">Optimisation auto.</b> Vos photos sont compressées pour charger ultra-rapidement même en 3G/4G limitée. Jusqu'à 10 photos, ~200 KB chacune.</span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="border-2 border-dashed border-neutral-300 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#FF6B1A]">
                   <ImageIcon className="h-6 w-6 text-neutral-400 mb-1" />
-                  <span className="text-xs font-semibold">Galerie</span>
-                  <input data-testid="publish-photos-gallery" type="file" accept="image/*" multiple className="hidden" onChange={onPhoto} />
+                  <span className="text-xs font-semibold">{optimizing ? "Optimisation…" : "Galerie"}</span>
+                  <input data-testid="publish-photos-gallery" type="file" accept="image/*" multiple disabled={optimizing} className="hidden" onChange={onPhoto} />
                 </label>
                 <label className="border-2 border-dashed border-neutral-300 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#FF6B1A]">
                   <Camera className="h-6 w-6 text-neutral-400 mb-1" />
-                  <span className="text-xs font-semibold">{t("publish.takePhoto")}</span>
-                  <input data-testid="publish-photos-camera" type="file" accept="image/*" capture="environment" className="hidden" onChange={onPhoto} />
+                  <span className="text-xs font-semibold">{optimizing ? "Optimisation…" : t("publish.takePhoto")}</span>
+                  <input data-testid="publish-photos-camera" type="file" accept="image/*" capture="environment" disabled={optimizing} className="hidden" onChange={onPhoto} />
                 </label>
               </div>
               {form.photos.length > 0 && (

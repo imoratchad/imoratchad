@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { formatPrice } from "../lib/constants";
+import { formatPrice, findLabelByValue } from "../lib/constants";
 
 const AdminDashboard = () => {
   const { t } = useTranslation();
@@ -14,6 +14,7 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState({});
   const [users, setUsers] = useState([]);
   const [properties, setProperties] = useState([]);
+  const [pending, setPending] = useState([]);
   const [payments, setPayments] = useState([]);
   const [feedback, setFeedback] = useState([]);
 
@@ -24,14 +25,15 @@ const AdminDashboard = () => {
 
   const refresh = async () => {
     try {
-      const [s, u, p, pay, fb] = await Promise.all([
+      const [s, u, p, pen, pay, fb] = await Promise.all([
         api.get("/admin/stats"),
         api.get("/admin/users"),
         api.get("/properties?status=&limit=200"),
+        api.get("/admin/properties/pending"),
         api.get("/admin/payments"),
         api.get("/admin/feedback"),
       ]);
-      setStats(s.data); setUsers(u.data); setProperties(p.data); setPayments(pay.data); setFeedback(fb.data);
+      setStats(s.data); setUsers(u.data); setProperties(p.data); setPending(pen.data); setPayments(pay.data); setFeedback(fb.data);
     } catch (e) { toast.error("Erreur de chargement"); }
   };
 
@@ -39,6 +41,25 @@ const AdminDashboard = () => {
     return <div className="max-w-md mx-auto p-8 text-center"><p className="text-neutral-500">Accès admin requis.</p></div>;
   }
 
+  const approvePending = async (id, verified = false) => {
+    const prop = pending.find(p => p.id === id);
+    const { data } = await api.put(`/admin/properties/${id}/verify`, { verified, status: "active" });
+    toast.success(`✓ "${prop?.title}" approuvée et publiée`, {
+      action: data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
+      duration: 8000,
+    });
+    refresh();
+  };
+  const rejectPending = async (id) => {
+    const prop = pending.find(p => p.id === id);
+    if (!window.confirm(`Rejeter définitivement "${prop?.title}" ?`)) return;
+    const { data } = await api.put(`/admin/properties/${id}/verify`, { verified: false, status: "rejected" });
+    toast.success(`Annonce rejetée`, {
+      action: data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
+      duration: 8000,
+    });
+    refresh();
+  };
   const openWhatsApp = (url) => {
     if (url) window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -124,16 +145,100 @@ const AdminDashboard = () => {
       <div className="flex items-center gap-2 mb-4 overflow-x-auto no-scrollbar">
         {[
           { v: "stats", l: t("admin.stats") },
+          { v: "moderation", l: `🔥 Modération${pending.length ? ` (${pending.length})` : ""}` },
           { v: "properties", l: t("admin.properties") },
           { v: "users", l: t("admin.users") },
           { v: "payments", l: t("admin.payments") },
           { v: "feedback", l: t("admin.feedback") },
         ].map(tt => (
-          <button key={tt.v} onClick={() => setTab(tt.v)} data-testid={`admin-tab-${tt.v}`} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${tab === tt.v ? "bg-[#0A0A0A] text-white" : "bg-white border border-neutral-200"}`}>{tt.l}</button>
+          <button key={tt.v} onClick={() => setTab(tt.v)} data-testid={`admin-tab-${tt.v}`} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${tab === tt.v ? "bg-[#0A0A0A] text-white" : tt.v === "moderation" && pending.length ? "bg-[#FF6B1A]/10 border border-[#FF6B1A] text-[#FF6B1A]" : "bg-white border border-neutral-200"}`}>{tt.l}</button>
         ))}
       </div>
 
       {tab === "stats" && (
+        <div className="space-y-4">
+          {pending.length > 0 && (
+            <button onClick={() => setTab("moderation")} data-testid="moderation-alert" className="w-full bg-gradient-to-r from-[#FF6B1A] to-[#E65A10] text-white rounded-xl p-4 flex items-center justify-between hover:shadow-lg transition">
+              <div className="flex items-center gap-3 text-left">
+                <div className="bg-white/20 rounded-full p-2 text-2xl">🔥</div>
+                <div>
+                  <div className="font-heading font-black text-xl">{pending.length} annonce{pending.length > 1 ? "s" : ""} à modérer</div>
+                  <div className="text-sm text-white/80">Validez ou rejetez en un clic — protégez la plateforme du spam</div>
+                </div>
+              </div>
+              <span className="font-bold">→</span>
+            </button>
+          )}
+          <div className="bg-white border border-neutral-200 rounded-xl p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Info label="Annonces en attente" value={pending.length} />
+              <Info label="Paiements en attente" value={stats.pending_payments || 0} />
+              <Info label="Revenus confirmés" value={formatPrice(stats.revenue || 0)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tab === "moderation" && (
+        <div className="space-y-3" data-testid="moderation-panel">
+          {pending.length === 0 ? (
+            <div className="bg-white border border-neutral-200 rounded-xl p-12 text-center">
+              <div className="text-5xl mb-2">✅</div>
+              <p className="font-heading font-bold text-lg">Aucune annonce en attente</p>
+              <p className="text-sm text-neutral-500">Tout est à jour — bon travail !</p>
+            </div>
+          ) : (
+            <>
+              <div className="bg-[#FF6B1A]/5 border border-[#FF6B1A]/30 rounded-lg p-3 text-sm">
+                💡 <b>{pending.length}</b> annonce{pending.length > 1 ? "s" : ""} à modérer. Vérifiez photos, prix, localisation et documents avant approbation.
+              </div>
+              {pending.map(p => (
+                <div key={p.id} data-testid={`moderation-${p.id}`} className="bg-white border-2 border-amber-200 rounded-xl overflow-hidden">
+                  <div className="grid grid-cols-1 md:grid-cols-[200px_1fr_auto] gap-4 p-4">
+                    {/* Photos preview */}
+                    <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible">
+                      {(p.photos || []).slice(0, 3).map((ph, i) => (
+                        <img key={i} src={ph} alt="" className="h-20 w-20 md:w-full md:h-20 rounded-lg object-cover shrink-0" />
+                      ))}
+                      {(!p.photos || p.photos.length === 0) && <div className="h-20 w-full bg-neutral-100 rounded-lg flex items-center justify-center text-xs text-neutral-400">Pas de photo</div>}
+                    </div>
+                    {/* Info */}
+                    <div className="min-w-0">
+                      <Link to={`/property/${p.id}`} target="_blank" className="font-heading font-bold text-lg hover:text-[#FF6B1A]">{p.title}</Link>
+                      <div className="text-xs text-neutral-500 mt-0.5">
+                        {findLabelByValue(p.property_type)} · {findLabelByValue(p.transaction_type)} · {p.neighborhood}, {p.city}
+                      </div>
+                      <div className="text-[#FF6B1A] font-heading font-black text-xl mt-1">{formatPrice(p.price)} {p.negotiable && <span className="text-xs text-neutral-500 font-bold uppercase">négociable</span>}</div>
+                      <p className="text-sm text-neutral-700 mt-2 line-clamp-2">{p.description}</p>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500 mt-2">
+                        <span>👤 {p.owner?.name || p.contact_name}</span>
+                        <span>📞 {p.contact_phone}</span>
+                        <span>📅 Soumise il y a {Math.max(0, Math.round((Date.now() - new Date(p.created_at).getTime()) / 3600000))}h</span>
+                        {p.documents?.length > 0 && <span>📎 {p.documents.length} doc(s)</span>}
+                        {p.photos?.length > 0 && <span>📷 {p.photos.length} photo(s)</span>}
+                      </div>
+                    </div>
+                    {/* Actions */}
+                    <div className="flex md:flex-col gap-2">
+                      <button onClick={() => approvePending(p.id, true)} data-testid={`approve-verified-${p.id}`} className="bg-[#00B4FF] hover:bg-[#0099D9] text-white font-bold h-11 px-4 rounded-lg whitespace-nowrap text-sm flex items-center justify-center gap-1" title="Approuver et marquer Vérifié">
+                        <BadgeCheck className="h-4 w-4" /> Approuver + Vérifier
+                      </button>
+                      <button onClick={() => approvePending(p.id, false)} data-testid={`approve-${p.id}`} className="bg-green-600 hover:bg-green-700 text-white font-bold h-11 px-4 rounded-lg whitespace-nowrap text-sm flex items-center justify-center gap-1">
+                        ✓ Approuver
+                      </button>
+                      <button onClick={() => rejectPending(p.id)} data-testid={`reject-${p.id}`} className="bg-red-600 hover:bg-red-700 text-white font-bold h-11 px-4 rounded-lg whitespace-nowrap text-sm flex items-center justify-center gap-1">
+                        ✕ Rejeter
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === "stats_old_block_remove" && false && (
         <div className="bg-white border border-neutral-200 rounded-xl p-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Info label="Annonces en attente" value={stats.pending_properties || 0} />

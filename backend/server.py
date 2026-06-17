@@ -538,11 +538,15 @@ async def create_property(payload: PropertyCreate, request: Request, authorizati
     for ph in payload.photos:
         h = hashlib.sha256(ph.encode("utf-8")).hexdigest()
         photo_hashes.append(h)
-        # Reject if a photo with the same hash exists in a DIFFERENT user's active property
         existing = await db.photo_hashes.find_one({"hash": h, "user_id": {"$ne": user["user_id"]}})
         if existing:
             raise HTTPException(status_code=400, detail="Une photo identique existe déjà sur la plateforme")
     prop = Property(user_id=user["user_id"], **payload.model_dump())
+    # MODERATION: All new ads go through admin approval, except admin's own and verified agencies
+    if user.get("role") == "admin" or (user.get("role") == "agence" and user.get("verified_agency")):
+        prop.status = "active"
+    else:
+        prop.status = "pending"
     await db.properties.insert_one(prop.model_dump())
     # Store hashes for future dedup
     for h in photo_hashes:
@@ -551,6 +555,16 @@ async def create_property(payload: PropertyCreate, request: Request, authorizati
             {"$set": {"hash": h, "user_id": user["user_id"], "property_id": prop.id, "created_at": datetime.now(timezone.utc).isoformat()}},
             upsert=True
         )
+    # Notify admins that a new ad needs moderation
+    if prop.status == "pending":
+        admins = await db.users.find({"role": "admin"}, {"_id": 0, "user_id": 1}).to_list(length=20)
+        for adm in admins:
+            await notify_user(
+                adm["user_id"], "moderation_pending",
+                f"Nouvelle annonce à modérer",
+                f"\"{prop.title}\" ({prop.neighborhood}, {int(prop.price):,} XAF) — soumise par {user.get('name', user['email'])}",
+                property_id=prop.id,
+            )
     return prop.model_dump()
 
 
@@ -840,6 +854,18 @@ async def admin_monthly_report(year: Optional[int] = None, month: Optional[int] 
         "top_sold": sorted(sold, key=lambda p: -p.get("price", 0))[:3],
         "top_rented": sorted(rented, key=lambda p: -p.get("price", 0))[:3],
     }
+
+
+@api_router.get("/admin/properties/pending")
+async def admin_pending_properties(request: Request, authorization: Optional[str] = Header(None)):
+    """Admin moderation queue — pending properties oldest first."""
+    await require_admin(request, authorization)
+    items = await db.properties.find({"status": "pending"}, {"_id": 0}).sort("created_at", 1).limit(200).to_list(length=200)
+    # Enrich with owner info
+    for it in items:
+        owner = await db.users.find_one({"user_id": it["user_id"]}, {"_id": 0, "name": 1, "email": 1, "phone": 1, "role": 1})
+        it["owner"] = owner or {}
+    return items
 
 
 @api_router.get("/admin/feedback")
