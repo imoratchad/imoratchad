@@ -17,6 +17,17 @@ const AdminDashboard = () => {
   const [pending, setPending] = useState([]);
   const [payments, setPayments] = useState([]);
   const [feedback, setFeedback] = useState([]);
+  const [rejectModal, setRejectModal] = useState(null); // property being rejected
+  const [rejectReason, setRejectReason] = useState("");
+
+  const REJECT_TEMPLATES = [
+    "Photos floues ou de mauvaise qualité — Veuillez télécharger des photos plus nettes.",
+    "Prix incohérent avec le marché du quartier — Merci de vérifier votre tarif.",
+    "Documents manquants ou illisibles — Joignez le titre foncier ou l'arrêté d'attribution.",
+    "Description trop courte ou imprécise — Détaillez les caractéristiques du bien.",
+    "Localisation incorrecte ou manquante — Précisez le quartier et l'adresse.",
+    "Contenu inapproprié ou suspect — Annonce non conforme à notre charte.",
+  ];
 
   useEffect(() => {
     if (!user || user.role !== "admin") return;
@@ -50,14 +61,23 @@ const AdminDashboard = () => {
     });
     refresh();
   };
-  const rejectPending = async (id) => {
+  const rejectPending = (id) => {
     const prop = pending.find(p => p.id === id);
-    if (!window.confirm(`Rejeter définitivement "${prop?.title}" ?`)) return;
-    const { data } = await api.put(`/admin/properties/${id}/verify`, { verified: false, status: "rejected" });
-    toast.success(`Annonce rejetée`, {
+    setRejectModal(prop);
+    setRejectReason("");
+  };
+
+  const confirmReject = async () => {
+    if (!rejectModal) return;
+    const reason = rejectReason.trim();
+    if (!reason) { toast.error("Veuillez indiquer une raison"); return; }
+    const { data } = await api.put(`/admin/properties/${rejectModal.id}/verify`, { verified: false, status: "rejected", rejection_reason: reason });
+    toast.success(`Annonce rejetée — raison communiquée`, {
       action: data.whatsapp_url ? { label: "Notifier WhatsApp", onClick: () => openWhatsApp(data.whatsapp_url) } : undefined,
-      duration: 8000,
+      duration: 10000,
     });
+    setRejectModal(null);
+    setRejectReason("");
     refresh();
   };
   const openWhatsApp = (url) => {
@@ -325,6 +345,45 @@ const AdminDashboard = () => {
               <div className="text-xs text-neutral-400 mt-1">{f.email || ""} {f.phone ? "· " + f.phone : ""}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Reject modal */}
+      {rejectModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setRejectModal(null)} data-testid="reject-modal">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="bg-red-100 text-red-600 rounded-full p-2 text-xl">✕</div>
+              <div className="flex-1">
+                <h3 className="font-heading font-black text-xl tracking-tight">Rejeter cette annonce</h3>
+                <p className="text-sm text-neutral-500 mt-1 line-clamp-1">{rejectModal.title}</p>
+              </div>
+            </div>
+            <p className="text-sm text-neutral-700 mb-2 font-semibold">Choisissez un motif (cliquez pour pré-remplir) :</p>
+            <div className="space-y-1.5 mb-3">
+              {REJECT_TEMPLATES.map((tpl, i) => (
+                <button key={i} onClick={() => setRejectReason(tpl)} data-testid={`reject-template-${i}`} className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition ${rejectReason === tpl ? "border-[#FF6B1A] bg-[#FF6B1A]/5" : "border-neutral-200 hover:border-neutral-900"}`}>
+                  {tpl}
+                </button>
+              ))}
+            </div>
+            <label className="imora-label">Raison personnalisée (modifiable) :</label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              data-testid="reject-reason-input"
+              rows={3}
+              className="imora-input py-2"
+              placeholder="Expliquez clairement pourquoi cette annonce est rejetée…"
+            />
+            <p className="text-xs text-neutral-500 mt-2">Le motif sera envoyé au propriétaire via notification + bouton WhatsApp.</p>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setRejectModal(null)} data-testid="reject-cancel" className="imora-btn-outline flex-1">Annuler</button>
+              <button onClick={confirmReject} data-testid="reject-confirm" disabled={!rejectReason.trim()} className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold h-12 px-6 rounded-lg flex-1 flex items-center justify-center">
+                ✕ Confirmer le rejet
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

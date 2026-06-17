@@ -113,6 +113,7 @@ class Property(BaseModel):
     status: PropertyStatus = "active"
     sold_at: Optional[str] = None
     rented_at: Optional[str] = None
+    rejection_reason: Optional[str] = ""
     testimonial: Optional[str] = ""  # Client testimonial after transaction
     testimonial_author: Optional[str] = ""
     tags: List[str] = []  # admin tags: "Premium", "Coup de cœur", "Vendu en 1 semaine", etc.
@@ -759,7 +760,10 @@ async def admin_verify_property(prop_id: str, body: dict, request: Request, auth
     if "testimonial_author" in body:
         set_fields["testimonial_author"] = body["testimonial_author"]
     if "tags" in body and isinstance(body["tags"], list):
-        set_fields["tags"] = [str(t)[:40] for t in body["tags"][:5]]  # max 5 tags, max 40 chars each
+        set_fields["tags"] = [str(t)[:40] for t in body["tags"][:5]]
+    rejection_reason = (body.get("rejection_reason") or "").strip()
+    if rejection_reason:
+        set_fields["rejection_reason"] = rejection_reason
     await db.properties.update_one({"id": prop_id}, {"$set": set_fields})
 
     # Build notification
@@ -772,12 +776,33 @@ async def admin_verify_property(prop_id: str, body: dict, request: Request, auth
             property_id=prop_id,
         )
     elif "status" in body:
-        notif_payload = await notify_user(
-            prop["user_id"], "property_status",
-            f"Statut mis à jour : {body['status']}",
-            f"Le statut de \"{prop['title']}\" est maintenant : {body['status']}.",
-            property_id=prop_id,
-        )
+        new_status = body["status"]
+        if new_status == "rejected":
+            msg = f"Votre annonce \"{prop['title']}\" n'a pas pu être validée."
+            if rejection_reason:
+                msg += f"\n\nRaison : {rejection_reason}\n\nVous pouvez la modifier et la soumettre à nouveau."
+            else:
+                msg += " Vous pouvez la modifier et la soumettre à nouveau."
+            notif_payload = await notify_user(
+                prop["user_id"], "property_rejected",
+                "Annonce non validée",
+                msg,
+                property_id=prop_id,
+            )
+        elif new_status == "active":
+            notif_payload = await notify_user(
+                prop["user_id"], "property_approved",
+                "✓ Votre annonce est publiée",
+                f"Bonne nouvelle ! \"{prop['title']}\" est maintenant en ligne sur IMORA Tchad et visible par tous les utilisateurs.",
+                property_id=prop_id,
+            )
+        else:
+            notif_payload = await notify_user(
+                prop["user_id"], "property_status",
+                f"Statut mis à jour : {new_status}",
+                f"Le statut de \"{prop['title']}\" est maintenant : {new_status}.",
+                property_id=prop_id,
+            )
     updated = await db.properties.find_one({"id": prop_id}, {"_id": 0})
     return {**updated, "whatsapp_url": notif_payload.get("whatsapp_url", "")}
 
