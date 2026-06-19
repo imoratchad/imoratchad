@@ -73,10 +73,19 @@ export const DOCUMENT_TYPES = [
 ];
 
 export const ROLES = [
-  { value: "particulier", label: "Particulier" },
+  { value: "particulier", label: "Propriétaire (particulier)" },
   { value: "agence", label: "Agence immobilière" },
+  { value: "demarcheur", label: "Démarcheur" },
   { value: "promoteur", label: "Promoteur immobilier" },
 ];
+
+export const ROLE_LABELS = {
+  particulier: "Propriétaire",
+  agence: "Agence",
+  demarcheur: "Démarcheur",
+  promoteur: "Promoteur",
+  admin: "Administrateur",
+};
 
 export const CONTACTS = {
   whatsapp1: "+235 64 92 73 80",

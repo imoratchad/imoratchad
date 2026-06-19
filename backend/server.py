@@ -544,8 +544,9 @@ async def create_property(payload: PropertyCreate, request: Request, authorizati
         if existing:
             raise HTTPException(status_code=400, detail="Une photo identique existe déjà sur la plateforme")
     prop = Property(user_id=user["user_id"], **payload.model_dump())
-    # MODERATION: All new ads go through admin approval, except admin's own and verified agencies
-    if user.get("role") == "admin" or (user.get("role") == "agence" and user.get("verified_agency")):
+    # MODERATION: Agencies, démarcheurs and promoteurs publish directly (trusted pros).
+    # Only particuliers (owners) go through admin moderation to filter spam/fakes.
+    if user.get("role") in ("admin", "agence", "promoteur", "demarcheur"):
         prop.status = "active"
     else:
         prop.status = "pending"

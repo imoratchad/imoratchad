@@ -293,23 +293,70 @@ const AdminDashboard = () => {
       )}
 
       {tab === "users" && (
-        <div className="space-y-2">
-          {users.map(u => (
-            <div key={u.user_id} className="bg-white border border-neutral-200 rounded-xl p-3 flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-[#FF6B1A] text-white flex items-center justify-center font-bold">{u.name?.[0]}</div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold line-clamp-1">{u.name}</div>
-                <div className="text-xs text-neutral-500">{u.email} · {u.role} {u.suspended && "· 🚫"}</div>
+        <div className="space-y-6" data-testid="users-panel">
+          {[
+            { key: "agence", label: "Agences immobilières", color: "#00B4FF", icon: "🏢" },
+            { key: "demarcheur", label: "Démarcheurs", color: "#FF6B1A", icon: "🤝" },
+            { key: "promoteur", label: "Promoteurs immobiliers", color: "#FECB00", icon: "🏗️" },
+            { key: "particulier", label: "Propriétaires (particuliers)", color: "#22C55E", icon: "👤" },
+            { key: "admin", label: "Administrateurs", color: "#0A0A0A", icon: "🛡️" },
+          ].map(group => {
+            const list = users.filter(u => (u.role || "particulier") === group.key);
+            if (list.length === 0) return null;
+            return (
+              <div key={group.key} data-testid={`user-group-${group.key}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="text-2xl">{group.icon}</div>
+                  <h3 className="font-heading font-black text-xl tracking-tight" style={{ color: group.color }}>{group.label}</h3>
+                  <span className="text-xs font-bold uppercase tracking-widest text-white px-2 py-0.5 rounded-full" style={{ background: group.color }}>{list.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {list.map(u => (
+                    <div key={u.user_id} className="bg-white border border-neutral-200 rounded-xl p-4">
+                      <div className="flex items-start gap-3">
+                        {u.picture ? (
+                          <img src={u.picture} alt={u.name} className="h-12 w-12 rounded-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full text-white flex items-center justify-center font-bold text-lg" style={{ background: group.color }}>{u.name?.[0] || "?"}</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-baseline gap-2">
+                            <div className="font-heading font-bold text-base">{u.name || "(Sans nom)"}</div>
+                            {u.suspended && <span className="text-[10px] uppercase font-bold tracking-widest bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Suspendu</span>}
+                            {u.verified_agency && <span className="text-[10px] uppercase font-bold tracking-widest bg-[#00B4FF] text-white px-2 py-0.5 rounded-full">✓ Vérifiée</span>}
+                          </div>
+                          <div className="text-sm text-neutral-700 mt-0.5 break-all">📧 {u.email}</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-neutral-600 mt-1">
+                            {u.phone && <div>📞 {u.phone}</div>}
+                            {u.whatsapp && <div>💬 WhatsApp : {u.whatsapp}</div>}
+                            {u.agency_name && <div>🏢 {u.agency_name}</div>}
+                            {u.created_at && <div>📅 Inscrit le {new Date(u.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}</div>}
+                            {u.last_login && <div>🕐 Dernière connexion : {new Date(u.last_login).toLocaleDateString("fr-FR")}</div>}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5 shrink-0">
+                          <select value={u.role || "particulier"} onChange={(e) => updateUser(u.user_id, { role: e.target.value })} data-testid={`role-${u.user_id}`} className="text-xs border border-neutral-200 rounded px-2 py-1 bg-white">
+                            <option value="particulier">Propriétaire</option>
+                            <option value="agence">Agence</option>
+                            <option value="demarcheur">Démarcheur</option>
+                            <option value="promoteur">Promoteur</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <button onClick={() => updateUser(u.user_id, { suspended: !u.suspended })} data-testid={`suspend-${u.user_id}`} className={`text-xs font-bold px-3 py-1 rounded-full ${u.suspended ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{u.suspended ? t("admin.unsuspend") : t("admin.suspend")}</button>
+                          {u.role === "agence" && (
+                            <button onClick={() => updateUser(u.user_id, { verified_agency: !u.verified_agency })} data-testid={`verify-agency-${u.user_id}`} className={`text-xs font-bold px-3 py-1 rounded-full ${u.verified_agency ? "bg-[#00B4FF] text-white" : "bg-neutral-100"}`}>✓ Vérifier</button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <select value={u.role} onChange={(e) => updateUser(u.user_id, { role: e.target.value })} data-testid={`role-${u.user_id}`} className="text-xs border border-neutral-200 rounded px-2 py-1">
-                <option>particulier</option><option>agence</option><option>promoteur</option><option>admin</option>
-              </select>
-              <button onClick={() => updateUser(u.user_id, { suspended: !u.suspended })} data-testid={`suspend-${u.user_id}`} className={`text-xs font-bold px-3 py-1.5 rounded-full ${u.suspended ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{u.suspended ? t("admin.unsuspend") : t("admin.suspend")}</button>
-              {u.role === "agence" && (
-                <button onClick={() => updateUser(u.user_id, { verified_agency: !u.verified_agency })} data-testid={`verify-agency-${u.user_id}`} className={`text-xs font-bold px-3 py-1.5 rounded-full ${u.verified_agency ? "bg-[#00B4FF] text-white" : "bg-neutral-100"}`}><BadgeCheck className="h-3 w-3 inline" /></button>
-              )}
-            </div>
-          ))}
+            );
+          })}
+          {users.length === 0 && (
+            <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center text-neutral-500">Aucun utilisateur inscrit.</div>
+          )}
         </div>
       )}
 
