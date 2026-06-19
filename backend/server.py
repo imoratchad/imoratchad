@@ -886,10 +886,16 @@ async def admin_pending_properties(request: Request, authorization: Optional[str
     """Admin moderation queue — pending properties oldest first."""
     await require_admin(request, authorization)
     items = await db.properties.find({"status": "pending"}, {"_id": 0}).sort("created_at", 1).limit(200).to_list(length=200)
-    # Enrich with owner info
-    for it in items:
-        owner = await db.users.find_one({"user_id": it["user_id"]}, {"_id": 0, "name": 1, "email": 1, "phone": 1, "role": 1})
-        it["owner"] = owner or {}
+    # Batch fetch all owners in one query (avoid N+1)
+    user_ids = list({it["user_id"] for it in items})
+    if user_ids:
+        owners = await db.users.find(
+            {"user_id": {"$in": user_ids}},
+            {"_id": 0, "user_id": 1, "name": 1, "email": 1, "phone": 1, "role": 1}
+        ).to_list(length=len(user_ids))
+        owner_map = {o["user_id"]: o for o in owners}
+        for it in items:
+            it["owner"] = owner_map.get(it["user_id"], {})
     return items
 
 
