@@ -414,7 +414,8 @@ async def list_properties(
     query = {}
     if status:
         query["status"] = status
-    else:
+    elif not user_id:
+        # Public listing: default to active only. When fetching a specific user's listings, show all statuses.
         query["status"] = "active"
     if city: query["city"] = city
     if neighborhood: query["neighborhood"] = neighborhood

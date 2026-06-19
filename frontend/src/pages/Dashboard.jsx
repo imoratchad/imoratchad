@@ -85,21 +85,61 @@ const Dashboard = () => {
         <div className="space-y-2">
           {mine.length === 0 ? (
             <div className="bg-white border border-neutral-200 rounded-xl p-8 text-center text-neutral-500">{t("dashboard.noMine")}</div>
-          ) : mine.map((p) => (
-            <div key={p.id} className="bg-white border border-neutral-200 rounded-xl p-3 flex items-center gap-3">
-              <img src={p.photos?.[0] || "https://images.unsplash.com/photo-1706164971302-e30c0640cc3b?w=200"} alt="" className="h-16 w-16 rounded-lg object-cover" />
-              <div className="flex-1 min-w-0">
-                <Link to={`/property/${p.id}`} className="font-heading font-bold line-clamp-1">{p.title}</Link>
-                <div className="text-xs text-neutral-500">{findLabelByValue(p.transaction_type)} · {formatPrice(p.price)}</div>
-                <div className="text-xs flex items-center gap-3 mt-0.5">
-                  <span className="text-neutral-500"><Eye className="h-3 w-3 inline" /> {p.views || 0}</span>
-                  <span className={`font-bold ${p.status === "active" ? "text-green-600" : p.status === "pending" ? "text-amber-600" : "text-neutral-500"}`}>{p.status}</span>
-                  {p.verified && <span className="text-[#00B4FF] font-bold">✓ Vérifié</span>}
+          ) : (
+            <>
+              {/* Banner if user has pending or rejected ads */}
+              {mine.filter(p => p.status === "pending").length > 0 && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 mb-3">
+                  <div className="flex items-start gap-3">
+                    <div className="text-2xl">⏳</div>
+                    <div className="flex-1">
+                      <p className="font-heading font-bold text-amber-900">
+                        {mine.filter(p => p.status === "pending").length} annonce(s) en cours de validation
+                      </p>
+                      <p className="text-sm text-amber-800">Notre équipe vérifie vos annonces (photos, prix, documents). Validation sous 24h en moyenne. Vous serez notifié dès qu'elles sont publiées.</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <button onClick={() => remove(p.id)} data-testid={`delete-${p.id}`} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="h-4 w-4" /></button>
-            </div>
-          ))}
+              )}
+              {mine.filter(p => p.status === "rejected").length > 0 && (
+                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-3">
+                  <div className="flex items-start gap-3">
+                    <div className="text-2xl">⚠️</div>
+                    <div className="flex-1">
+                      <p className="font-heading font-bold text-red-900">
+                        {mine.filter(p => p.status === "rejected").length} annonce(s) rejetée(s)
+                      </p>
+                      <p className="text-sm text-red-800">Consultez la raison ci-dessous et modifiez l'annonce avant de la re-soumettre.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {mine.map((p) => (
+                <div key={p.id} className="bg-white border border-neutral-200 rounded-xl p-3">
+                  <div className="flex items-center gap-3">
+                    <img src={p.photos?.[0] || "https://images.unsplash.com/photo-1706164971302-e30c0640cc3b?w=200"} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                    <div className="flex-1 min-w-0">
+                      <Link to={`/property/${p.id}`} className="font-heading font-bold line-clamp-1">{p.title}</Link>
+                      <div className="text-xs text-neutral-500">{findLabelByValue(p.transaction_type)} · {formatPrice(p.price)}</div>
+                      <div className="text-xs flex items-center gap-3 mt-0.5">
+                        <span className="text-neutral-500"><Eye className="h-3 w-3 inline" /> {p.views || 0}</span>
+                        <StatusBadge status={p.status} />
+                        {p.verified && <span className="text-[#00B4FF] font-bold">✓ Vérifié</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => remove(p.id)} data-testid={`delete-${p.id}`} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                  {p.status === "rejected" && p.rejection_reason && (
+                    <div className="mt-3 bg-red-50 border-l-4 border-red-400 p-3 rounded">
+                      <div className="text-xs font-bold uppercase tracking-widest text-red-700 mb-1">Raison du rejet</div>
+                      <p className="text-sm text-red-900">{p.rejection_reason}</p>
+                      <p className="text-xs text-neutral-600 mt-2">💡 Modifiez votre annonce et soumettez à nouveau pour qu'elle soit re-validée.</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
 
@@ -211,6 +251,18 @@ const Dashboard = () => {
       )}
     </div>
   );
+};
+
+const StatusBadge = ({ status }) => {
+  const map = {
+    active: { l: "✓ En ligne", c: "bg-green-100 text-green-700" },
+    pending: { l: "⏳ En attente de validation", c: "bg-amber-100 text-amber-700" },
+    rejected: { l: "✕ Rejetée", c: "bg-red-100 text-red-700" },
+    sold: { l: "🏠 Vendue", c: "bg-[#FF6B1A]/10 text-[#FF6B1A]" },
+    rented: { l: "🔑 Louée", c: "bg-[#00B4FF]/10 text-[#00B4FF]" },
+  };
+  const m = map[status] || { l: status, c: "bg-neutral-100 text-neutral-700" };
+  return <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${m.c}`}>{m.l}</span>;
 };
 
 const ChartCard = ({ title, children }) => (

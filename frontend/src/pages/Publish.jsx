@@ -1,11 +1,68 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Camera, Image as ImageIcon, X, Check, ChevronLeft, ChevronRight, Video, FileText, MapPin } from "lucide-react";
+import { Camera, Image as ImageIcon, X, Check, ChevronLeft, ChevronRight, Video, FileText, MapPin, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { CITIES, ARRONDISSEMENTS, ALL_NEIGHBORHOODS, PROPERTY_TYPES, TRANSACTION_TYPES, DOCUMENT_TYPES, NDJAMENA_CENTER } from "../lib/constants";
+
+// Validation rules per step. Returns { fieldName: errorMessage } for invalid fields.
+const validateStep = (step, form) => {
+  const e = {};
+  if (step === 1) {
+    if (!form.property_type) e.property_type = "Veuillez choisir le type de bien.";
+    if (!form.transaction_type) e.transaction_type = "Veuillez choisir le type de transaction.";
+    if (!form.title?.trim()) e.title = "Le titre est requis.";
+    else if (form.title.trim().length < 8) e.title = "Le titre est trop court (min. 8 caractères).";
+    else if (form.title.trim().length > 120) e.title = "Le titre est trop long (max. 120 caractères).";
+    if (!form.description?.trim()) e.description = "La description est requise.";
+    else if (form.description.trim().length < 30) e.description = "Décrivez votre bien plus en détail (min. 30 caractères).";
+  }
+  if (step === 2) {
+    if (!form.city) e.city = "Veuillez choisir une ville.";
+    if (!form.neighborhood) e.neighborhood = "Veuillez choisir un quartier.";
+    if (form.lat == null || isNaN(parseFloat(form.lat))) e.lat = "Latitude invalide.";
+    if (form.lng == null || isNaN(parseFloat(form.lng))) e.lng = "Longitude invalide.";
+  }
+  if (step === 3) {
+    const p = parseFloat(form.price);
+    if (!p || p <= 0) e.price = "Le prix doit être supérieur à 0.";
+    else if (p > 10000000000) e.price = "Le prix semble incohérent. Vérifiez votre saisie.";
+    // Rooms only required for habitable property types
+    const habitable = ["chambre", "studio", "appartement", "maison", "villa", "duplex", "immeuble"];
+    if (habitable.includes(form.property_type) && parseInt(form.rooms || 0) <= 0) {
+      e.rooms = "Indiquez le nombre de chambres.";
+    }
+    // Area: at least one of land_area or living_area
+    const land = parseFloat(form.land_area || 0);
+    const living = parseFloat(form.living_area || 0);
+    if (land <= 0 && living <= 0) e.land_area = "Indiquez la superficie (terrain ou habitable).";
+  }
+  if (step === 4) {
+    if (!form.photos || form.photos.length === 0) e.photos = "Ajoutez au moins une photo du bien.";
+  }
+  if (step === 5) {
+    if (!form.contact_name?.trim()) e.contact_name = "Veuillez indiquer votre nom.";
+    if (!form.contact_phone?.trim()) e.contact_phone = "Le numéro de téléphone est requis.";
+    else if (!/^[+]?[\d\s-]{7,}$/.test(form.contact_phone.trim())) e.contact_phone = "Numéro invalide (ex. +235 64 92 73 80).";
+    if (form.contact_whatsapp?.trim() && !/^[+]?[\d\s-]{7,}$/.test(form.contact_whatsapp.trim())) {
+      e.contact_whatsapp = "Numéro WhatsApp invalide.";
+    }
+    if (form.contact_email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contact_email.trim())) {
+      e.contact_email = "Email invalide.";
+    }
+  }
+  return e;
+};
+
+const ErrorMsg = ({ msg, testid }) =>
+  msg ? (
+    <div className="flex items-center gap-1 mt-1 text-xs font-semibold text-red-600" data-testid={testid}>
+      <AlertCircle className="h-3 w-3 shrink-0" />
+      <span>{msg}</span>
+    </div>
+  ) : null;
 
 const Publish = () => {
   const { t } = useTranslation();
@@ -13,6 +70,8 @@ const Publish = () => {
   const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [optimizing, setOptimizing] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState(false);
   const [form, setForm] = useState({
     property_type: "", transaction_type: "",
     title: "", description: "",
@@ -23,6 +82,11 @@ const Publish = () => {
     photos: [], videos: [], virtual_tour_url: "", documents: [],
     contact_name: user?.name || "", contact_phone: user?.phone || "", contact_whatsapp: user?.whatsapp || "", contact_email: user?.email || "",
   });
+
+  // Re-validate every time the form changes (only show errors if user clicked Next once)
+  React.useEffect(() => {
+    if (touched) setErrors(validateStep(step, form));
+  }, [form, step, touched]);
 
   if (!user) {
     return (
@@ -101,6 +165,24 @@ const Publish = () => {
   };
 
   const submit = async () => {
+    const stepErrors = validateStep(5, form);
+    // Also validate previous steps to be safe
+    const allErrors = { ...validateStep(1, form), ...validateStep(2, form), ...validateStep(3, form), ...validateStep(4, form), ...stepErrors };
+    if (Object.keys(allErrors).length > 0) {
+      setErrors(allErrors); setTouched(true);
+      // Jump back to first invalid step
+      const stepOf = (k) => {
+        if (["property_type","transaction_type","title","description"].includes(k)) return 1;
+        if (["city","neighborhood","lat","lng"].includes(k)) return 2;
+        if (["price","rooms","land_area"].includes(k)) return 3;
+        if (["photos"].includes(k)) return 4;
+        return 5;
+      };
+      const first = Math.min(...Object.keys(allErrors).map(stepOf));
+      setStep(first);
+      toast.error("Vérifiez les champs en rouge avant de publier.");
+      return;
+    }
     try {
       const payload = { ...form, price: parseFloat(form.price), rooms: parseInt(form.rooms || 0), bathrooms: parseInt(form.bathrooms || 0), living_rooms: parseInt(form.living_rooms || 0), land_area: parseFloat(form.land_area || 0), living_area: parseFloat(form.living_area || 0) };
       const { data } = await api.post("/properties", payload);
@@ -114,6 +196,22 @@ const Publish = () => {
       toast.error(e.response?.data?.detail || t("common.error"));
     }
   };
+
+  const goNext = () => {
+    const stepErrors = validateStep(step, form);
+    setTouched(true);
+    setErrors(stepErrors);
+    if (Object.keys(stepErrors).length > 0) {
+      toast.error("Vérifiez les champs en rouge avant de continuer.");
+      return;
+    }
+    setStep(step + 1);
+    setTouched(false);
+    setErrors({});
+  };
+
+  const errCls = (k) => (errors[k] ? "imora-input !border-red-500 !border-2 focus:!ring-red-300 focus:!ring-2" : "imora-input");
+  const lblCls = (k) => (errors[k] ? "imora-label !text-red-600" : "imora-label");
 
   const useGPS = () => {
     if (!navigator.geolocation) return;
@@ -144,28 +242,35 @@ const Publish = () => {
         {step === 1 && (
           <div className="space-y-4">
             <div>
-              <label className="imora-label">{t("search.propertyType")}</label>
-              <select data-testid="publish-property-type" value={form.property_type} onChange={(e) => set("property_type", e.target.value)} className="imora-input">
-                <option value="">—</option>
+              <label className={lblCls("property_type")}>{t("search.propertyType")} *</label>
+              <select data-testid="publish-property-type" value={form.property_type} onChange={(e) => set("property_type", e.target.value)} className={errCls("property_type")}>
+                <option value="">— Choisissez —</option>
                 {Object.values(PROPERTY_TYPES).map(g => (
                   <optgroup key={g.label} label={g.label}>{g.items.map(it => <option key={it.value} value={it.value}>{it.label}</option>)}</optgroup>
                 ))}
               </select>
+              <ErrorMsg msg={errors.property_type} testid="err-property-type" />
             </div>
             <div>
-              <label className="imora-label">{t("search.transactionType")}</label>
-              <select data-testid="publish-transaction-type" value={form.transaction_type} onChange={(e) => set("transaction_type", e.target.value)} className="imora-input">
-                <option value="">—</option>
+              <label className={lblCls("transaction_type")}>{t("search.transactionType")} *</label>
+              <select data-testid="publish-transaction-type" value={form.transaction_type} onChange={(e) => set("transaction_type", e.target.value)} className={errCls("transaction_type")}>
+                <option value="">— Choisissez —</option>
                 {TRANSACTION_TYPES.map(tr => <option key={tr.value} value={tr.value}>{tr.label}</option>)}
               </select>
+              <ErrorMsg msg={errors.transaction_type} testid="err-transaction-type" />
             </div>
             <div>
-              <label className="imora-label">{t("publish.titleField")}</label>
-              <input data-testid="publish-title" value={form.title} onChange={(e) => set("title", e.target.value)} className="imora-input" />
+              <label className={lblCls("title")}>{t("publish.titleField")} *</label>
+              <input data-testid="publish-title" value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Ex. Belle villa 4 chambres à Klémat avec jardin" className={errCls("title")} />
+              <ErrorMsg msg={errors.title} testid="err-title" />
             </div>
             <div>
-              <label className="imora-label">{t("publish.desc")}</label>
-              <textarea data-testid="publish-description" value={form.description} onChange={(e) => set("description", e.target.value)} className="imora-input min-h-[120px] py-2" />
+              <label className={lblCls("description")}>{t("publish.desc")} *</label>
+              <textarea data-testid="publish-description" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Décrivez le bien : caractéristiques, équipements, environnement, atouts…" className={`${errCls("description")} min-h-[120px] py-2`} />
+              <div className="flex items-center justify-between mt-1">
+                <ErrorMsg msg={errors.description} testid="err-description" />
+                <span className="text-[10px] text-neutral-400 ms-auto">{form.description?.length || 0} car.</span>
+              </div>
             </div>
           </div>
         )}
@@ -223,8 +328,9 @@ const Publish = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="imora-label">{t("publish.price")}</label>
-                <input data-testid="publish-price" type="number" value={form.price} onChange={(e) => set("price", e.target.value)} className="imora-input" />
+                <label className={lblCls("price")}>{t("publish.price")} *</label>
+                <input data-testid="publish-price" type="number" value={form.price} onChange={(e) => set("price", e.target.value)} placeholder="Ex. 15000000" className={errCls("price")} />
+                <ErrorMsg msg={errors.price} testid="err-price" />
               </div>
               <label className="flex items-end gap-2 cursor-pointer pb-3">
                 <input type="checkbox" checked={form.negotiable} onChange={(e) => set("negotiable", e.target.checked)} className="h-4 w-4 accent-[#FF6B1A]" data-testid="publish-negotiable" />
@@ -232,26 +338,27 @@ const Publish = () => {
               </label>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div><label className="imora-label">{t("detail.rooms")}</label><input data-testid="publish-rooms" type="number" value={form.rooms} onChange={(e) => set("rooms", e.target.value)} className="imora-input" /></div>
-              <div><label className="imora-label">{t("detail.bathrooms")}</label><input data-testid="publish-bathrooms" type="number" value={form.bathrooms} onChange={(e) => set("bathrooms", e.target.value)} className="imora-input" /></div>
-              <div><label className="imora-label">{t("detail.livingRooms")}</label><input data-testid="publish-livingrooms" type="number" value={form.living_rooms} onChange={(e) => set("living_rooms", e.target.value)} className="imora-input" /></div>
+              <div><label className={lblCls("rooms")}>{t("detail.rooms")}</label><input data-testid="publish-rooms" type="number" min="0" value={form.rooms} onChange={(e) => set("rooms", e.target.value)} className={errCls("rooms")} /><ErrorMsg msg={errors.rooms} testid="err-rooms" /></div>
+              <div><label className="imora-label">{t("detail.bathrooms")}</label><input data-testid="publish-bathrooms" type="number" min="0" value={form.bathrooms} onChange={(e) => set("bathrooms", e.target.value)} className="imora-input" /></div>
+              <div><label className="imora-label">{t("detail.livingRooms")}</label><input data-testid="publish-livingrooms" type="number" min="0" value={form.living_rooms} onChange={(e) => set("living_rooms", e.target.value)} className="imora-input" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="imora-label">{t("detail.landArea")} (m²)</label><input data-testid="publish-land-area" type="number" value={form.land_area} onChange={(e) => set("land_area", e.target.value)} className="imora-input" /></div>
-              <div><label className="imora-label">{t("detail.livingArea")} (m²)</label><input data-testid="publish-living-area" type="number" value={form.living_area} onChange={(e) => set("living_area", e.target.value)} className="imora-input" /></div>
+              <div><label className={lblCls("land_area")}>{t("detail.landArea")} (m²)</label><input data-testid="publish-land-area" type="number" min="0" value={form.land_area} onChange={(e) => set("land_area", e.target.value)} className={errCls("land_area")} /></div>
+              <div><label className="imora-label">{t("detail.livingArea")} (m²)</label><input data-testid="publish-living-area" type="number" min="0" value={form.living_area} onChange={(e) => set("living_area", e.target.value)} className="imora-input" /></div>
             </div>
+            <ErrorMsg msg={errors.land_area} testid="err-land-area" />
           </div>
         )}
 
         {step === 4 && (
           <div className="space-y-4">
             <div>
-              <label className="imora-label">{t("publish.uploadPhotos")}</label>
+              <label className={lblCls("photos")}>{t("publish.uploadPhotos")} *</label>
               <div className="bg-[#00B4FF]/5 border border-[#00B4FF]/30 rounded-lg p-3 mb-2 text-xs text-neutral-700 flex items-start gap-2">
                 <span className="text-base">⚡</span>
                 <span><b className="text-[#00B4FF]">Optimisation auto.</b> Vos photos sont compressées pour charger ultra-rapidement même en 3G/4G limitée. Jusqu'à 10 photos, ~200 KB chacune.</span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`grid grid-cols-2 gap-2 ${errors.photos ? "ring-2 ring-red-500 rounded-lg p-1" : ""}`}>
                 <label className="border-2 border-dashed border-neutral-300 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:border-[#FF6B1A]">
                   <ImageIcon className="h-6 w-6 text-neutral-400 mb-1" />
                   <span className="text-xs font-semibold">{optimizing ? "Optimisation…" : "Galerie"}</span>
@@ -263,6 +370,7 @@ const Publish = () => {
                   <input data-testid="publish-photos-camera" type="file" accept="image/*" capture="environment" disabled={optimizing} className="hidden" onChange={onPhoto} />
                 </label>
               </div>
+              <ErrorMsg msg={errors.photos} testid="err-photos" />
               {form.photos.length > 0 && (
                 <div className="grid grid-cols-4 gap-2 mt-3">
                   {form.photos.map((p, i) => (
@@ -313,22 +421,28 @@ const Publish = () => {
 
         {step === 5 && (
           <div className="space-y-4">
-            <div><label className="imora-label">{t("publish.contactName")}</label><input data-testid="publish-contact-name" value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} className="imora-input" /></div>
-            <div><label className="imora-label">{t("publish.contactPhone")}</label><input data-testid="publish-contact-phone" value={form.contact_phone} onChange={(e) => set("contact_phone", e.target.value)} className="imora-input" /></div>
-            <div><label className="imora-label">{t("publish.contactWhatsapp")}</label><input data-testid="publish-contact-whatsapp" value={form.contact_whatsapp} onChange={(e) => set("contact_whatsapp", e.target.value)} className="imora-input" /></div>
-            <div><label className="imora-label">{t("publish.contactEmail")}</label><input data-testid="publish-contact-email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} className="imora-input" /></div>
+            <div><label className={lblCls("contact_name")}>{t("publish.contactName")} *</label><input data-testid="publish-contact-name" value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} className={errCls("contact_name")} /><ErrorMsg msg={errors.contact_name} testid="err-contact-name" /></div>
+            <div><label className={lblCls("contact_phone")}>{t("publish.contactPhone")} *</label><input data-testid="publish-contact-phone" value={form.contact_phone} onChange={(e) => set("contact_phone", e.target.value)} placeholder="+235 64 92 73 80" className={errCls("contact_phone")} /><ErrorMsg msg={errors.contact_phone} testid="err-contact-phone" /></div>
+            <div><label className={lblCls("contact_whatsapp")}>{t("publish.contactWhatsapp")}</label><input data-testid="publish-contact-whatsapp" value={form.contact_whatsapp} onChange={(e) => set("contact_whatsapp", e.target.value)} placeholder="+235 92 26 84 75" className={errCls("contact_whatsapp")} /><ErrorMsg msg={errors.contact_whatsapp} testid="err-contact-whatsapp" /></div>
+            <div><label className={lblCls("contact_email")}>{t("publish.contactEmail")}</label><input data-testid="publish-contact-email" type="email" value={form.contact_email} onChange={(e) => set("contact_email", e.target.value)} className={errCls("contact_email")} /><ErrorMsg msg={errors.contact_email} testid="err-contact-email" /></div>
           </div>
         )}
       </div>
 
       <div className="flex items-center justify-between mt-6">
-        <button onClick={() => setStep(Math.max(1, step - 1))} disabled={step === 1} data-testid="publish-back-btn" className="imora-btn-outline disabled:opacity-50"><ChevronLeft className="h-4 w-4" /> {t("publish.back")}</button>
+        <button onClick={() => { setStep(Math.max(1, step - 1)); setTouched(false); setErrors({}); }} disabled={step === 1} data-testid="publish-back-btn" className="imora-btn-outline disabled:opacity-50"><ChevronLeft className="h-4 w-4" /> {t("publish.back")}</button>
         {step < 5 ? (
-          <button onClick={() => setStep(step + 1)} data-testid="publish-next-btn" className="imora-btn-primary">{t("publish.next")} <ChevronRight className="h-4 w-4" /></button>
+          <button onClick={goNext} data-testid="publish-next-btn" className="imora-btn-primary">{t("publish.next")} <ChevronRight className="h-4 w-4" /></button>
         ) : (
           <button onClick={submit} data-testid="publish-submit-btn" className="imora-btn-primary">{t("publish.submit")}</button>
         )}
       </div>
+      {touched && Object.keys(errors).length > 0 && (
+        <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2" data-testid="error-summary">
+          <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+          <p className="text-sm text-red-700"><b>{Object.keys(errors).length} champ(s) à corriger</b> sur cette étape. Les zones en rouge indiquent ce qui est manquant ou mal rempli.</p>
+        </div>
+      )}
     </div>
   );
 };

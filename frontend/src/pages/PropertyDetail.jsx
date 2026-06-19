@@ -43,6 +43,7 @@ const PropertyDetail = () => {
 
   if (!property) return <div className="max-w-7xl mx-auto p-8 text-center text-neutral-500">{t("common.loading")}</div>;
 
+  const isOwner = user && (user.user_id === property.user_id || user.role === "admin");
   const photos = property.photos?.length ? property.photos : ["https://images.unsplash.com/photo-1706164971302-e30c0640cc3b?w=1200&q=70"];
   const hasLoc = property.lat && property.lng;
   const mapCenter = hasLoc ? { lat: property.lat, lng: property.lng } : NDJAMENA_CENTER;
@@ -50,6 +51,35 @@ const PropertyDetail = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <Link to="/search" className="text-sm font-bold text-neutral-500 hover:text-neutral-900 mb-4 inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> {t("nav.search")}</Link>
+
+      {/* Owner-only status banner */}
+      {isOwner && property.status === "pending" && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 mb-4 flex items-start gap-3" data-testid="owner-pending-banner">
+          <div className="text-2xl">⏳</div>
+          <div>
+            <p className="font-heading font-bold text-amber-900">Annonce en cours de validation</p>
+            <p className="text-sm text-amber-800">Notre équipe vérifie photos, prix et documents. Validation moyenne sous 24h. Vous serez notifié dès la publication.</p>
+          </div>
+        </div>
+      )}
+      {isOwner && property.status === "rejected" && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 mb-4" data-testid="owner-rejected-banner">
+          <div className="flex items-start gap-3">
+            <div className="text-2xl">⚠️</div>
+            <div className="flex-1">
+              <p className="font-heading font-bold text-red-900">Annonce non validée</p>
+              {property.rejection_reason ? (
+                <div className="mt-1">
+                  <p className="text-sm text-red-900"><b>Raison :</b> {property.rejection_reason}</p>
+                  <p className="text-xs text-neutral-600 mt-2">💡 Corrigez les points soulevés et contactez WhatsApp +235 64 92 73 80 pour re-soumettre.</p>
+                </div>
+              ) : (
+                <p className="text-sm text-red-800">Contactez l'administrateur pour plus d'informations.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Gallery */}
       <div className="relative bg-neutral-100 rounded-xl overflow-hidden mb-6">
