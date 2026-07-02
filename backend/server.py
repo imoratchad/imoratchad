@@ -76,7 +76,10 @@ class User(BaseModel):
 
 
 class RoleUpdate(BaseModel):
-    role: UserRole
+    # Self-service role selection: users may only claim non-privileged roles.
+    # Admin role is granted exclusively via the ADMIN_EMAILS allowlist on Google login
+    # or by an existing admin via /api/admin/users/{user_id}. Never trust client input for admin.
+    role: Literal["particulier", "agence", "promoteur", "demarcheur"]
     phone: Optional[str] = ""
     whatsapp: Optional[str] = ""
     agency_name: Optional[str] = ""
@@ -255,15 +258,22 @@ if RESEND_API_KEY:
 
 
 def _email_template(title: str, message: str, cta_url: Optional[str] = None, cta_label: Optional[str] = None) -> str:
-    """Simple inline-CSS HTML email template with IMORA branding."""
-    safe_message = (message or "").replace("\n", "<br>")
+    """Simple inline-CSS HTML email template with IMORA branding.
+    All caller-supplied strings are HTML-escaped to prevent HTML/tag injection
+    from user-controlled property titles or rejection reasons."""
+    import html as _html_mod
+    safe_title = _html_mod.escape(title or "")
+    safe_message = _html_mod.escape(message or "").replace("\n", "<br>")
     cta_html = ""
     if cta_url and cta_label:
+        # cta_url is server-built from FRONTEND_PUBLIC_URL + trusted id; still escape defensively.
+        safe_cta_url = _html_mod.escape(cta_url, quote=True)
+        safe_cta_label = _html_mod.escape(cta_label)
         cta_html = (
             f'<tr><td style="padding:16px 0 8px 0;">'
-            f'<a href="{cta_url}" style="display:inline-block;background:#FF6B1A;color:#ffffff;'
+            f'<a href="{safe_cta_url}" style="display:inline-block;background:#FF6B1A;color:#ffffff;'
             f'text-decoration:none;font-weight:700;padding:12px 22px;border-radius:8px;'
-            f'font-family:Arial,sans-serif;font-size:14px;">{cta_label}</a>'
+            f'font-family:Arial,sans-serif;font-size:14px;">{safe_cta_label}</a>'
             f'</td></tr>'
         )
     return f"""<!doctype html>
@@ -277,7 +287,7 @@ def _email_template(title: str, message: str, cta_url: Optional[str] = None, cta
           <div style="color:rgba(255,255,255,0.9);font-size:12px;margin-top:4px;">La plateforme immobilière du Tchad</div>
         </td></tr>
         <tr><td style="padding:28px 28px 8px 28px;">
-          <h1 style="margin:0 0 12px 0;font-size:20px;font-weight:800;color:#0A0A0A;">{title}</h1>
+          <h1 style="margin:0 0 12px 0;font-size:20px;font-weight:800;color:#0A0A0A;">{safe_title}</h1>
           <p style="margin:0;font-size:15px;line-height:1.55;color:#333333;">{safe_message}</p>
         </td></tr>
         <tr><td style="padding:0 28px 24px 28px;">
@@ -356,6 +366,11 @@ async def get_session_token(request: Request, authorization: Optional[str] = Hea
 async def get_current_user(request: Request, authorization: Optional[str] = Header(None)) -> Optional[dict]:
     token = await get_session_token(request, authorization)
     if not token:
+        return None
+    # SEC hardening: block hard-coded test session tokens in production to defeat
+    # attackers who might guess the well-known test token names. Enable by setting
+    # DISABLE_TEST_SESSIONS=1 in the prod backend .env.
+    if os.environ.get("DISABLE_TEST_SESSIONS", "").lower() in ("1", "true", "yes") and token.startswith("test_session_"):
         return None
     session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
     if not session:
@@ -467,14 +482,19 @@ async def auth_logout(request: Request, response: Response, authorization: Optio
 @api_router.put("/auth/profile")
 async def update_profile(payload: RoleUpdate, request: Request, authorization: Optional[str] = Header(None)):
     user = await require_user(request, authorization)
-    update = {"role": payload.role}
+    update = {}
+    # Never allow self-promotion to admin. Also never allow an existing admin to demote
+    # themselves via this endpoint — role changes for admins go through /api/admin/users/{id}.
+    if user.get("role") != "admin":
+        update["role"] = payload.role
     if payload.phone is not None:
         update["phone"] = payload.phone
     if payload.whatsapp is not None:
         update["whatsapp"] = payload.whatsapp
     if payload.agency_name is not None:
         update["agency_name"] = payload.agency_name
-    await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
+    if update:
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
     updated = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
     return updated
 
@@ -523,10 +543,14 @@ async def list_properties(
         else:
             query["$or"] = area_clause
     if q:
+        # Escape user input so it's treated as a literal search (defends against
+        # MongoDB $regex ReDoS / catastrophic backtracking attacks).
+        import re as _re
+        q_escaped = _re.escape(q[:100])  # also cap length
         q_clause = [
-            {"title": {"$regex": q, "$options": "i"}},
-            {"description": {"$regex": q, "$options": "i"}},
-            {"neighborhood": {"$regex": q, "$options": "i"}},
+            {"title": {"$regex": q_escaped, "$options": "i"}},
+            {"description": {"$regex": q_escaped, "$options": "i"}},
+            {"neighborhood": {"$regex": q_escaped, "$options": "i"}},
         ]
         if "$or" in query:
             query = {"$and": [{"$or": query.pop("$or")}, {"$or": q_clause}, query]}
@@ -1051,18 +1075,31 @@ USER_COLUMNS = [
 ]
 
 
+def _neutralize_formula(s: str) -> str:
+    """Prefix a leading '=' / '+' / '-' / '@' / TAB / CR with an apostrophe so that
+    spreadsheet software (Excel, Sheets, LibreOffice) treats the cell as literal text
+    instead of evaluating a formula. Mitigates CSV Formula Injection (CWE-1236)."""
+    if not s:
+        return s
+    if s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def _to_cell(val):
-    """Coerce values to a cell-friendly primitive."""
+    """Coerce values to a cell-friendly primitive with formula-injection protection."""
     if val is None:
         return ""
     if isinstance(val, bool):
         return "Oui" if val else "Non"
     if isinstance(val, (list, tuple)):
-        return ", ".join(str(v) for v in val)
+        return _neutralize_formula(", ".join(str(v) for v in val))
     if isinstance(val, dict):
-        return str(val)
+        return _neutralize_formula(str(val))
     if isinstance(val, datetime):
         return val.isoformat()
+    if isinstance(val, str):
+        return _neutralize_formula(val)
     return val
 
 
@@ -1272,11 +1309,47 @@ async def agency_analytics(request: Request, authorization: Optional[str] = Head
 # ============================================================
 # AI Assistant (IMORA Agent) — Claude Sonnet via Emergent Universal Key
 # ============================================================
+# Simple in-memory sliding-window rate limiter (per IP/user) to prevent LLM cost abuse.
+# For multi-worker prod, replace with Redis. Sufficient here since backend runs as a single
+# uvicorn process behind Kubernetes ingress.
+from collections import defaultdict, deque
+
+_AI_RATE_HISTORY: dict = defaultdict(deque)
+_AI_RATE_LIMIT_PER_MIN = 6
+_AI_RATE_WINDOW_SEC = 60
+_AI_MAX_MESSAGE_CHARS = 1500
+
+
+def _check_ai_rate_limit(key: str) -> bool:
+    """Return True if the caller is within the rate limit, False if throttled."""
+    now = datetime.now(timezone.utc).timestamp()
+    q = _AI_RATE_HISTORY[key]
+    # Prune old entries
+    while q and (now - q[0]) > _AI_RATE_WINDOW_SEC:
+        q.popleft()
+    if len(q) >= _AI_RATE_LIMIT_PER_MIN:
+        return False
+    q.append(now)
+    return True
+
+
 @api_router.post("/ai/chat")
 async def ai_chat(payload: ChatMessage, request: Request, authorization: Optional[str] = Header(None)):
     from emergentintegrations.llm.chat import LlmChat, UserMessage
 
     user = await get_current_user(request, authorization)
+
+    # Size cap — reject oversized prompts before hitting the LLM
+    if not payload.message or not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message vide")
+    if len(payload.message) > _AI_MAX_MESSAGE_CHARS:
+        raise HTTPException(status_code=413, detail=f"Message trop long (max {_AI_MAX_MESSAGE_CHARS} caractères)")
+
+    # Rate limit: authenticated users keyed by user_id, anonymous by client IP.
+    rate_key = f"u:{user['user_id']}" if user else f"ip:{request.client.host if request.client else 'unknown'}"
+    if not _check_ai_rate_limit(rate_key):
+        raise HTTPException(status_code=429, detail="Trop de messages. Réessayez dans une minute.")
+
     session_id = payload.session_id or f"sess_{uuid.uuid4().hex[:10]}"
 
     # Build context: top 8 active properties summary for the model
@@ -1345,13 +1418,21 @@ async def root():
 
 app.include_router(api_router)
 
+# CORS: with allow_credentials=True we must never use wildcard "*". If CORS_ORIGINS is unset
+# or is a wildcard, we fall back to an origin regex that permits our production/preview domains
+# only. Explicit origins from env take precedence.
+_cors_env = os.environ.get('CORS_ORIGINS', '').strip()
+_explicit_origins = [o.strip() for o in _cors_env.split(',') if o.strip() and o.strip() != '*']
+_cors_kwargs = dict(allow_credentials=True, allow_methods=["*"], allow_headers=["*"], expose_headers=["set-cookie"])
+if _explicit_origins:
+    _cors_kwargs["allow_origins"] = _explicit_origins
+else:
+    # Allow the preview subdomain family + localhost for dev. This never matches arbitrary origins.
+    _cors_kwargs["allow_origin_regex"] = r"^https?://(localhost(:\d+)?|.*\.preview\.emergentagent\.com|.*\.emergent\.host|imoratchad\.com|.*\.imoratchad\.com)$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["set-cookie"],
+    **_cors_kwargs,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
