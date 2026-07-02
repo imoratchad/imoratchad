@@ -3,7 +3,10 @@ IMORA Tchad - Backend FastAPI
 Plateforme immobilière du Tchad
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, Header, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+import csv
+import io
+from openpyxl import Workbook
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -906,6 +909,207 @@ async def admin_feedback(request: Request, authorization: Optional[str] = Header
     await require_admin(request, authorization)
     items = await db.feedback.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(length=500)
     return items
+
+
+# ============================================================
+# Admin — Export (CSV / Excel)
+# ============================================================
+ROLE_LABELS_FR = {
+    "particulier": "Propriétaire (particulier)",
+    "agence": "Agence immobilière",
+    "promoteur": "Promoteur immobilier",
+    "demarcheur": "Démarcheur",
+    "admin": "Administrateur",
+}
+
+PROPERTY_COLUMNS = [
+    ("id", "ID"),
+    ("title", "Titre"),
+    ("property_type", "Type de bien"),
+    ("transaction_type", "Transaction"),
+    ("price", "Prix (FCFA)"),
+    ("currency", "Devise"),
+    ("negotiable", "Négociable"),
+    ("city", "Ville"),
+    ("neighborhood", "Quartier"),
+    ("address", "Adresse"),
+    ("rooms", "Chambres"),
+    ("bathrooms", "Salles de bain"),
+    ("surface", "Surface (m²)"),
+    ("status", "Statut"),
+    ("verified", "Vérifié"),
+    ("featured", "Mis en avant"),
+    ("views", "Vues"),
+    ("contact_name", "Nom contact"),
+    ("contact_phone", "Téléphone contact"),
+    ("owner_name", "Propriétaire"),
+    ("owner_email", "Email propriétaire"),
+    ("owner_role", "Rôle propriétaire"),
+    ("photos_count", "Nombre de photos"),
+    ("rejection_reason", "Motif de rejet"),
+    ("created_at", "Créée le"),
+]
+
+USER_COLUMNS = [
+    ("user_id", "ID"),
+    ("name", "Nom"),
+    ("email", "Email"),
+    ("phone", "Téléphone"),
+    ("whatsapp", "WhatsApp"),
+    ("role", "Rôle"),
+    ("agency_name", "Agence"),
+    ("verified_agency", "Agence vérifiée"),
+    ("suspended", "Suspendu"),
+    ("properties_count", "Nb annonces"),
+    ("created_at", "Inscrit le"),
+    ("last_login", "Dernière connexion"),
+]
+
+
+def _to_cell(val):
+    """Coerce values to a cell-friendly primitive."""
+    if val is None:
+        return ""
+    if isinstance(val, bool):
+        return "Oui" if val else "Non"
+    if isinstance(val, (list, tuple)):
+        return ", ".join(str(v) for v in val)
+    if isinstance(val, dict):
+        return str(val)
+    if isinstance(val, datetime):
+        return val.isoformat()
+    return val
+
+
+def _build_csv(headers, rows) -> bytes:
+    buf = io.StringIO()
+    # BOM so Excel opens UTF-8 correctly (accents preserved)
+    buf.write("\ufeff")
+    writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(headers)
+    for r in rows:
+        writer.writerow([_to_cell(v) for v in r])
+    return buf.getvalue().encode("utf-8")
+
+
+def _build_xlsx(sheet_name, headers, rows) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet_name[:31]  # Excel limit
+    ws.append(headers)
+    # Bold header
+    for cell in ws[1]:
+        cell.font = cell.font.copy(bold=True)
+    for r in rows:
+        ws.append([_to_cell(v) for v in r])
+    # Auto-fit column width (approximate)
+    for col_idx, header in enumerate(headers, start=1):
+        max_len = len(str(header))
+        letter = ws.cell(row=1, column=col_idx).column_letter
+        for row in ws.iter_rows(min_col=col_idx, max_col=col_idx, min_row=2, values_only=True):
+            v = row[0]
+            if v is not None:
+                length = len(str(v))
+                if length > max_len:
+                    max_len = length
+        ws.column_dimensions[letter].width = min(max_len + 2, 60)
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.getvalue()
+
+
+def _stream_file(content: bytes, filename: str, mime: str) -> StreamingResponse:
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=mime,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(content)),
+        },
+    )
+
+
+@api_router.get("/admin/export/properties")
+async def export_properties(
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+    request: Request = None,
+    authorization: Optional[str] = Header(None),
+):
+    """Export all properties in CSV or Excel format."""
+    await require_admin(request, authorization)
+    props = await db.properties.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=10000)
+
+    # Batch fetch owners for enrichment
+    user_ids = list({p.get("user_id") for p in props if p.get("user_id")})
+    owner_map = {}
+    if user_ids:
+        owners = await db.users.find(
+            {"user_id": {"$in": user_ids}},
+            {"_id": 0, "user_id": 1, "name": 1, "email": 1, "role": 1},
+        ).to_list(length=len(user_ids))
+        owner_map = {o["user_id"]: o for o in owners}
+
+    headers_fr = [label for _, label in PROPERTY_COLUMNS]
+    rows = []
+    for p in props:
+        owner = owner_map.get(p.get("user_id"), {})
+        row_dict = {
+            **p,
+            "owner_name": owner.get("name", ""),
+            "owner_email": owner.get("email", ""),
+            "owner_role": ROLE_LABELS_FR.get(owner.get("role", ""), owner.get("role", "")),
+            "photos_count": len(p.get("photos") or []),
+        }
+        rows.append([row_dict.get(key, "") for key, _ in PROPERTY_COLUMNS])
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    if format == "xlsx":
+        content = _build_xlsx("Annonces IMORA", headers_fr, rows)
+        return _stream_file(
+            content,
+            f"imora_annonces_{ts}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    content = _build_csv(headers_fr, rows)
+    return _stream_file(content, f"imora_annonces_{ts}.csv", "text/csv; charset=utf-8")
+
+
+@api_router.get("/admin/export/users")
+async def export_users(
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+    request: Request = None,
+    authorization: Optional[str] = Header(None),
+):
+    """Export all users in CSV or Excel format."""
+    await require_admin(request, authorization)
+    users = await db.users.find({}, {"_id": 0}).sort("created_at", -1).to_list(length=10000)
+
+    # Count properties per user
+    pipeline = [{"$group": {"_id": "$user_id", "count": {"$sum": 1}}}]
+    counts = await db.properties.aggregate(pipeline).to_list(length=10000)
+    count_map = {c["_id"]: c["count"] for c in counts}
+
+    headers_fr = [label for _, label in USER_COLUMNS]
+    rows = []
+    for u in users:
+        row_dict = {
+            **u,
+            "role": ROLE_LABELS_FR.get(u.get("role", "particulier"), u.get("role", "")),
+            "properties_count": count_map.get(u.get("user_id"), 0),
+        }
+        rows.append([row_dict.get(key, "") for key, _ in USER_COLUMNS])
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    if format == "xlsx":
+        content = _build_xlsx("Utilisateurs IMORA", headers_fr, rows)
+        return _stream_file(
+            content,
+            f"imora_utilisateurs_{ts}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    content = _build_csv(headers_fr, rows)
+    return _stream_file(content, f"imora_utilisateurs_{ts}.csv", "text/csv; charset=utf-8")
 
 
 # ============================================================

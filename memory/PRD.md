@@ -30,6 +30,15 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
 - PWA: Manifest + Service Worker (offline-first cache).
 - Mobile bottom nav, sticky desktop header, Chad flag stripe.
 
+## Implemented (2026-02-14)
+- **Admin Data Export**: New "📥 Export" tab in Admin Dashboard.
+  - Endpoints: `GET /api/admin/export/properties?format=csv|xlsx` and `GET /api/admin/export/users?format=csv|xlsx`.
+  - Properties CSV/XLSX include: id, title, type, transaction, price, city/neighborhood/address, rooms, surface, status, verified, featured, views, contact, owner (name/email/role), photos count, rejection reason, created_at.
+  - Users CSV/XLSX include: id, name, email, phone, WhatsApp, role, agency, verified_agency, suspended, properties count, created_at, last_login.
+  - CSV uses `;` delimiter + UTF-8 BOM (Excel/Sheets friendly, accents preserved).
+  - XLSX via `openpyxl` with bold header + auto-sized columns.
+  - Filename includes UTC timestamp: `imora_annonces_YYYYMMDD_HHMM.xlsx`.
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.

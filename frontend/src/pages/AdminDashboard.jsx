@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Users, Building2, Home as HomeIcon, ShieldCheck, CreditCard, Activity, BadgeCheck, Star } from "lucide-react";
+import { Users, Building2, Home as HomeIcon, ShieldCheck, CreditCard, Activity, BadgeCheck, Star, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
@@ -19,6 +19,7 @@ const AdminDashboard = () => {
   const [feedback, setFeedback] = useState([]);
   const [rejectModal, setRejectModal] = useState(null); // property being rejected
   const [rejectReason, setRejectReason] = useState("");
+  const [exporting, setExporting] = useState(null);
 
   const REJECT_TEMPLATES = [
     "Photos floues ou de mauvaise qualité — Veuillez télécharger des photos plus nettes.",
@@ -141,6 +142,35 @@ const AdminDashboard = () => {
     refresh();
   };
 
+  const downloadExport = async (resource, format) => {
+    const key = `${resource}-${format}`;
+    try {
+      setExporting(key);
+      const response = await api.get(`/admin/export/${resource}`, {
+        params: { format },
+        responseType: "blob",
+      });
+      const cd = response.headers["content-disposition"] || "";
+      const match = cd.match(/filename="?([^"]+)"?/i);
+      const ts = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+      const fallback = `imora_${resource}_${ts}.${format}`;
+      const filename = match ? match[1] : fallback;
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`✓ Export ${format.toUpperCase()} téléchargé — ${filename}`);
+    } catch (e) {
+      toast.error("Échec de l'export. Réessayez.");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-1">
@@ -170,6 +200,7 @@ const AdminDashboard = () => {
           { v: "users", l: t("admin.users") },
           { v: "payments", l: t("admin.payments") },
           { v: "feedback", l: t("admin.feedback") },
+          { v: "export", l: "📥 Export" },
         ].map(tt => (
           <button key={tt.v} onClick={() => setTab(tt.v)} data-testid={`admin-tab-${tt.v}`} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${tab === tt.v ? "bg-[#0A0A0A] text-white" : tt.v === "moderation" && pending.length ? "bg-[#FF6B1A]/10 border border-[#FF6B1A] text-[#FF6B1A]" : "bg-white border border-neutral-200"}`}>{tt.l}</button>
         ))}
@@ -392,6 +423,92 @@ const AdminDashboard = () => {
               <div className="text-xs text-neutral-400 mt-1">{f.email || ""} {f.phone ? "· " + f.phone : ""}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tab === "export" && (
+        <div className="space-y-4" data-testid="export-panel">
+          <div className="bg-gradient-to-br from-[#0A0A0A] to-[#1a1a1a] text-white rounded-2xl p-6">
+            <div className="flex items-start gap-3">
+              <div className="bg-[#FF6B1A]/20 rounded-full p-3">
+                <Download className="h-6 w-6 text-[#FF6B1A]" />
+              </div>
+              <div>
+                <h2 className="font-heading font-black text-2xl tracking-tight">Exporter les données</h2>
+                <p className="text-sm text-neutral-400 mt-1">
+                  Téléchargez toutes les annonces immobilières et les utilisateurs au format <b>CSV</b> (compatible Excel, Google Sheets) ou <b>Excel (.xlsx)</b> natif pour analyse hors ligne, sauvegarde ou reporting.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Properties export */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-5" data-testid="export-properties-card">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-[#FF6B1A]/10 text-[#FF6B1A] rounded-full p-2"><HomeIcon className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="font-heading font-black text-lg tracking-tight">Annonces immobilières</h3>
+                  <p className="text-xs text-neutral-500">{properties.length} annonce(s) au total · titre, prix, statut, propriétaire, contact…</p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => downloadExport("properties", "csv")}
+                  disabled={exporting === "properties-csv"}
+                  data-testid="export-properties-csv"
+                  className="flex-1 bg-[#0A0A0A] hover:bg-neutral-800 disabled:opacity-50 text-white font-bold h-11 rounded-lg text-sm flex items-center justify-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  {exporting === "properties-csv" ? "Export…" : "Télécharger CSV"}
+                </button>
+                <button
+                  onClick={() => downloadExport("properties", "xlsx")}
+                  disabled={exporting === "properties-xlsx"}
+                  data-testid="export-properties-xlsx"
+                  className="flex-1 bg-[#00B4FF] hover:bg-[#0099D9] disabled:opacity-50 text-white font-bold h-11 rounded-lg text-sm flex items-center justify-center gap-2"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  {exporting === "properties-xlsx" ? "Export…" : "Télécharger Excel"}
+                </button>
+              </div>
+            </div>
+
+            {/* Users export */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-5" data-testid="export-users-card">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="bg-[#00B4FF]/10 text-[#00B4FF] rounded-full p-2"><Users className="h-5 w-5" /></div>
+                <div>
+                  <h3 className="font-heading font-black text-lg tracking-tight">Utilisateurs</h3>
+                  <p className="text-xs text-neutral-500">{users.length} utilisateur(s) · nom, email, téléphone, rôle, agence, nb d&apos;annonces…</p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => downloadExport("users", "csv")}
+                  disabled={exporting === "users-csv"}
+                  data-testid="export-users-csv"
+                  className="flex-1 bg-[#0A0A0A] hover:bg-neutral-800 disabled:opacity-50 text-white font-bold h-11 rounded-lg text-sm flex items-center justify-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  {exporting === "users-csv" ? "Export…" : "Télécharger CSV"}
+                </button>
+                <button
+                  onClick={() => downloadExport("users", "xlsx")}
+                  disabled={exporting === "users-xlsx"}
+                  data-testid="export-users-xlsx"
+                  className="flex-1 bg-[#FF6B1A] hover:bg-[#E65A10] disabled:opacity-50 text-white font-bold h-11 rounded-lg text-sm flex items-center justify-center gap-2"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  {exporting === "users-xlsx" ? "Export…" : "Télécharger Excel"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+            <b>💡 Astuce :</b> Le format <b>CSV</b> utilise le point-virgule (<code>;</code>) comme séparateur et un BOM UTF-8 pour préserver les accents. Ouvrez-le directement dans Excel, LibreOffice Calc ou Google Sheets.
+          </div>
         </div>
       )}
 
