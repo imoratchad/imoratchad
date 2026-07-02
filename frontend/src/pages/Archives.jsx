@@ -89,25 +89,25 @@ const Archives = () => {
       <div className="bg-[#0A0A0A] text-white rounded-2xl p-6 sm:p-8 mb-6 relative overflow-hidden">
         <div className="absolute -right-10 -top-10 opacity-10"><Trophy className="h-48 w-48" /></div>
         <div className="relative">
-          <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#00B4FF] mb-2">Transactions réussies</div>
-          <h1 className="font-heading font-black text-3xl sm:text-5xl tracking-tighter">Biens vendus & loués</h1>
-          <p className="text-white/70 mt-2 max-w-2xl">Découvrez les biens immobiliers déjà vendus ou loués via IMORA Tchad. La preuve sociale de notre plateforme et l'historique de nos transactions réussies.</p>
+          <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#00B4FF] mb-2">{t("archives.badge")}</div>
+          <h1 className="font-heading font-black text-3xl sm:text-5xl tracking-tighter">{t("archives.title")}</h1>
+          <p className="text-white/70 mt-2 max-w-2xl">{t("archives.subtitle")}</p>
           <div className="flex flex-wrap items-center gap-3 mt-5">
             <div className="bg-white/10 px-4 py-2 rounded-lg">
-              <div className="text-[10px] uppercase tracking-widest text-white/60">Vendus</div>
+              <div className="text-[10px] uppercase tracking-widest text-white/60">{t("archives.sold")}</div>
               <div className="font-heading font-black text-2xl text-[#FF6B1A]">{stats?.sold ?? sold.length}</div>
             </div>
             <div className="bg-white/10 px-4 py-2 rounded-lg">
-              <div className="text-[10px] uppercase tracking-widest text-white/60">Loués</div>
+              <div className="text-[10px] uppercase tracking-widest text-white/60">{t("archives.rented")}</div>
               <div className="font-heading font-black text-2xl text-[#00B4FF]">{stats?.rented ?? rented.length}</div>
             </div>
             <div className="bg-white/10 px-4 py-2 rounded-lg">
-              <div className="text-[10px] uppercase tracking-widest text-white/60">Total</div>
+              <div className="text-[10px] uppercase tracking-widest text-white/60">{t("archives.totalLabel")}</div>
               <div className="font-heading font-black text-2xl">{stats?.total ?? items.length}</div>
             </div>
             {stats?.current_year && (
               <div className="bg-[#FF6B1A]/20 border border-[#FF6B1A]/40 px-4 py-2 rounded-lg">
-                <div className="text-[10px] uppercase tracking-widest text-[#FF6B1A]">En {stats.current_year}</div>
+                <div className="text-[10px] uppercase tracking-widest text-[#FF6B1A]">{t("archives.inYear", { year: stats.current_year })}</div>
                 <div className="font-heading font-black text-2xl text-[#FF6B1A]">{stats.this_year}</div>
               </div>
             )}
@@ -118,7 +118,7 @@ const Archives = () => {
       {/* Top neighborhoods (social proof) */}
       {stats?.top_neighborhoods?.length > 0 && (
         <div className="bg-white border border-neutral-200 rounded-xl p-4 mb-6">
-          <div className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500 mb-2">Quartiers les plus actifs</div>
+          <div className="text-xs font-bold uppercase tracking-[0.2em] text-neutral-500 mb-2">{t("archives.topNeighborhoods")}</div>
           <div className="flex flex-wrap gap-2">
             {stats.top_neighborhoods.map(n => (
               <button key={n.name} onClick={() => setNeighborhood(neighborhood === n.name ? "" : n.name)} data-testid={`archives-neigh-${n.name}`} className={`px-3 py-1.5 rounded-full text-sm font-bold border ${neighborhood === n.name ? "bg-[#0A0A0A] text-white border-[#0A0A0A]" : "bg-white border-neutral-200 hover:border-neutral-900"}`}>
@@ -132,7 +132,7 @@ const Archives = () => {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
         <button onClick={() => { setFilter(""); setYear(""); setNeighborhood(""); }} data-testid="archives-filter-all" className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${filter === "" && !year && !neighborhood ? "bg-[#0A0A0A] text-white" : "bg-white border border-neutral-200"}`}>
-          <Filter className="h-3 w-3 inline mr-1" /> Tous
+          <Filter className="h-3 w-3 inline mr-1" /> {t("common.all")}
         </button>
         {TRANSACTION_TYPES.map(tr => (
           <button key={tr.value} onClick={() => setFilter(filter === tr.value ? "" : tr.value)} data-testid={`archives-filter-${tr.value}`} className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap ${filter === tr.value ? "bg-[#0A0A0A] text-white" : "bg-white border border-neutral-200"}`}>
@@ -141,7 +141,7 @@ const Archives = () => {
         ))}
         {stats?.by_year?.length > 0 && (
           <select value={year} onChange={(e) => setYear(e.target.value)} data-testid="archives-year-select" className="bg-white border border-neutral-200 rounded-full text-sm font-bold px-4 py-2">
-            <option value="">Toutes années</option>
+            <option value="">{t("archives.allYears")}</option>
             {stats.by_year.map(y => <option key={y.year} value={y.year}>{y.year} ({y.count})</option>)}
           </select>
         )}
@@ -152,7 +152,7 @@ const Archives = () => {
       ) : items.length === 0 ? (
         <div className="bg-white border border-neutral-200 rounded-xl p-12 text-center">
           <CheckCircle2 className="h-10 w-10 mx-auto text-neutral-400 mb-3" />
-          <p className="text-neutral-600">Aucun bien archivé pour ces critères.</p>
+          <p className="text-neutral-600">{t("archives.emptyFilter")}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">

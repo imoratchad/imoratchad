@@ -39,6 +39,19 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
   - XLSX via `openpyxl` with bold header + auto-sized columns.
   - Filename includes UTC timestamp: `imora_annonces_YYYYMMDD_HHMM.xlsx`.
 
+## Implemented (2026-02-15)
+- **Emergent badge removed**: `#emergent-badge` fully removed from `/app/frontend/public/index.html` — no third-party branding on the platform.
+- **Email notifications (Resend)**: Backend now sends transactional e-mails to the property owner via Resend on:
+  - Approval (`status=active`) — "✓ Votre annonce est publiée"
+  - Rejection (`status=rejected`) — includes the rejection reason
+  - Verification badge granted (`verified=True`) — "Votre annonce a été vérifiée"
+  - Status change (`sold` / `rented`)
+  - Non-blocking `asyncio.create_task` so admin API stays instant.
+  - IMORA-branded inline-HTML template (orange/cyan gradient header, CTA button linking to `/property/{id}`).
+  - Falls back silently to WhatsApp-only when `RESEND_API_KEY` is not set (logs "skipping email").
+  - New env vars: `RESEND_API_KEY`, `SENDER_EMAIL` (default `onboarding@resend.dev`), `FRONTEND_PUBLIC_URL`.
+- **i18n expansion**: Full FR/EN/AR coverage extended for Publish (validation messages, placeholders, toasts, chooseOption, address, useGps), Archives (badge, subtitle, stats labels, top neighborhoods, filters), Layout nav ("Sold & Rented" / "المُباعة والمؤجرة"), Contact, Map. RTL layout confirmed for Arabic.
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.

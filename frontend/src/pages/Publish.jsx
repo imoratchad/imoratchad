@@ -8,49 +8,48 @@ import { useAuth } from "../lib/auth";
 import { CITIES, ARRONDISSEMENTS, ALL_NEIGHBORHOODS, PROPERTY_TYPES, TRANSACTION_TYPES, DOCUMENT_TYPES, NDJAMENA_CENTER } from "../lib/constants";
 
 // Validation rules per step. Returns { fieldName: errorMessage } for invalid fields.
-const validateStep = (step, form) => {
+const validateStep = (step, form, t) => {
   const e = {};
+  const msg = (k) => (t ? t(`publish.err.${k}`) : k);
   if (step === 1) {
-    if (!form.property_type) e.property_type = "Veuillez choisir le type de bien.";
-    if (!form.transaction_type) e.transaction_type = "Veuillez choisir le type de transaction.";
-    if (!form.title?.trim()) e.title = "Le titre est requis.";
-    else if (form.title.trim().length < 8) e.title = "Le titre est trop court (min. 8 caractères).";
-    else if (form.title.trim().length > 120) e.title = "Le titre est trop long (max. 120 caractères).";
-    if (!form.description?.trim()) e.description = "La description est requise.";
-    else if (form.description.trim().length < 30) e.description = "Décrivez votre bien plus en détail (min. 30 caractères).";
+    if (!form.property_type) e.property_type = msg("typeRequired");
+    if (!form.transaction_type) e.transaction_type = msg("transactionRequired");
+    if (!form.title?.trim()) e.title = msg("titleRequired");
+    else if (form.title.trim().length < 8) e.title = msg("titleShort");
+    else if (form.title.trim().length > 120) e.title = msg("titleLong");
+    if (!form.description?.trim()) e.description = msg("descRequired");
+    else if (form.description.trim().length < 30) e.description = msg("descShort");
   }
   if (step === 2) {
-    if (!form.city) e.city = "Veuillez choisir une ville.";
-    if (!form.neighborhood) e.neighborhood = "Veuillez choisir un quartier.";
-    if (form.lat == null || isNaN(parseFloat(form.lat))) e.lat = "Latitude invalide.";
-    if (form.lng == null || isNaN(parseFloat(form.lng))) e.lng = "Longitude invalide.";
+    if (!form.city) e.city = msg("cityRequired");
+    if (!form.neighborhood) e.neighborhood = msg("neighRequired");
+    if (form.lat == null || isNaN(parseFloat(form.lat))) e.lat = msg("latInvalid");
+    if (form.lng == null || isNaN(parseFloat(form.lng))) e.lng = msg("lngInvalid");
   }
   if (step === 3) {
     const p = parseFloat(form.price);
-    if (!p || p <= 0) e.price = "Le prix doit être supérieur à 0.";
-    else if (p > 10000000000) e.price = "Le prix semble incohérent. Vérifiez votre saisie.";
-    // Rooms only required for habitable property types
+    if (!p || p <= 0) e.price = msg("priceInvalid");
+    else if (p > 10000000000) e.price = msg("priceTooHigh");
     const habitable = ["chambre", "studio", "appartement", "maison", "villa", "duplex", "immeuble"];
     if (habitable.includes(form.property_type) && parseInt(form.rooms || 0) <= 0) {
-      e.rooms = "Indiquez le nombre de chambres.";
+      e.rooms = msg("roomsRequired");
     }
-    // Area: at least one of land_area or living_area
     const land = parseFloat(form.land_area || 0);
     const living = parseFloat(form.living_area || 0);
-    if (land <= 0 && living <= 0) e.land_area = "Indiquez la superficie (terrain ou habitable).";
+    if (land <= 0 && living <= 0) e.land_area = msg("areaRequired");
   }
   if (step === 4) {
-    if (!form.photos || form.photos.length === 0) e.photos = "Ajoutez au moins une photo du bien.";
+    if (!form.photos || form.photos.length === 0) e.photos = msg("photoRequired");
   }
   if (step === 5) {
-    if (!form.contact_name?.trim()) e.contact_name = "Veuillez indiquer votre nom.";
-    if (!form.contact_phone?.trim()) e.contact_phone = "Le numéro de téléphone est requis.";
-    else if (!/^[+]?[\d\s-]{7,}$/.test(form.contact_phone.trim())) e.contact_phone = "Numéro invalide (ex. +235 64 92 73 80).";
+    if (!form.contact_name?.trim()) e.contact_name = msg("nameRequired");
+    if (!form.contact_phone?.trim()) e.contact_phone = msg("phoneRequired");
+    else if (!/^[+]?[\d\s-]{7,}$/.test(form.contact_phone.trim())) e.contact_phone = msg("phoneInvalid");
     if (form.contact_whatsapp?.trim() && !/^[+]?[\d\s-]{7,}$/.test(form.contact_whatsapp.trim())) {
-      e.contact_whatsapp = "Numéro WhatsApp invalide.";
+      e.contact_whatsapp = msg("whatsappInvalid");
     }
     if (form.contact_email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.contact_email.trim())) {
-      e.contact_email = "Email invalide.";
+      e.contact_email = msg("emailInvalid");
     }
   }
   return e;
@@ -85,8 +84,8 @@ const Publish = () => {
 
   // Re-validate every time the form changes (only show errors if user clicked Next once)
   React.useEffect(() => {
-    if (touched) setErrors(validateStep(step, form));
-  }, [form, step, touched]);
+    if (touched) setErrors(validateStep(step, form, t));
+  }, [form, step, touched, t]);
 
   if (!user) {
     return (
@@ -165,9 +164,9 @@ const Publish = () => {
   };
 
   const submit = async () => {
-    const stepErrors = validateStep(5, form);
+    const stepErrors = validateStep(5, form, t);
     // Also validate previous steps to be safe
-    const allErrors = { ...validateStep(1, form), ...validateStep(2, form), ...validateStep(3, form), ...validateStep(4, form), ...stepErrors };
+    const allErrors = { ...validateStep(1, form, t), ...validateStep(2, form, t), ...validateStep(3, form, t), ...validateStep(4, form, t), ...stepErrors };
     if (Object.keys(allErrors).length > 0) {
       setErrors(allErrors); setTouched(true);
       // Jump back to first invalid step
@@ -180,14 +179,14 @@ const Publish = () => {
       };
       const first = Math.min(...Object.keys(allErrors).map(stepOf));
       setStep(first);
-      toast.error("Vérifiez les champs en rouge avant de publier.");
+      toast.error(t("publish.fixErrors"));
       return;
     }
     try {
       const payload = { ...form, price: parseFloat(form.price), rooms: parseInt(form.rooms || 0), bathrooms: parseInt(form.bathrooms || 0), living_rooms: parseInt(form.living_rooms || 0), land_area: parseFloat(form.land_area || 0), living_area: parseFloat(form.living_area || 0) };
       const { data } = await api.post("/properties", payload);
       if (data.status === "pending") {
-        toast.success("Annonce soumise ! Elle sera publiée après validation par l'administrateur (sous 24h).", { duration: 8000 });
+        toast.success(t("publish.successPending"), { duration: 8000 });
       } else {
         toast.success(t("publish.success"));
       }
@@ -198,11 +197,11 @@ const Publish = () => {
   };
 
   const goNext = () => {
-    const stepErrors = validateStep(step, form);
+    const stepErrors = validateStep(step, form, t);
     setTouched(true);
     setErrors(stepErrors);
     if (Object.keys(stepErrors).length > 0) {
-      toast.error("Vérifiez les champs en rouge avant de continuer.");
+      toast.error(t("publish.fixErrorsStep"));
       return;
     }
     setStep(step + 1);
@@ -217,8 +216,8 @@ const Publish = () => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((pos) => {
       setForm({ ...form, lat: pos.coords.latitude, lng: pos.coords.longitude });
-      toast.success("Position GPS récupérée");
-    }, () => toast.error("Impossible d'obtenir la position GPS"));
+      toast.success(t("publish.gpsOk"));
+    }, () => toast.error(t("publish.gpsFail")));
   };
 
   const neighborhoods = form.arrondissement ? ARRONDISSEMENTS[form.arrondissement] || [] : ALL_NEIGHBORHOODS;
@@ -244,7 +243,7 @@ const Publish = () => {
             <div>
               <label className={lblCls("property_type")}>{t("search.propertyType")} *</label>
               <select data-testid="publish-property-type" value={form.property_type} onChange={(e) => set("property_type", e.target.value)} className={errCls("property_type")}>
-                <option value="">— Choisissez —</option>
+                <option value="">{t("publish.chooseOption")}</option>
                 {Object.values(PROPERTY_TYPES).map(g => (
                   <optgroup key={g.label} label={g.label}>{g.items.map(it => <option key={it.value} value={it.value}>{it.label}</option>)}</optgroup>
                 ))}
@@ -254,19 +253,19 @@ const Publish = () => {
             <div>
               <label className={lblCls("transaction_type")}>{t("search.transactionType")} *</label>
               <select data-testid="publish-transaction-type" value={form.transaction_type} onChange={(e) => set("transaction_type", e.target.value)} className={errCls("transaction_type")}>
-                <option value="">— Choisissez —</option>
+                <option value="">{t("publish.chooseOption")}</option>
                 {TRANSACTION_TYPES.map(tr => <option key={tr.value} value={tr.value}>{tr.label}</option>)}
               </select>
               <ErrorMsg msg={errors.transaction_type} testid="err-transaction-type" />
             </div>
             <div>
               <label className={lblCls("title")}>{t("publish.titleField")} *</label>
-              <input data-testid="publish-title" value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Ex. Belle villa 4 chambres à Klémat avec jardin" className={errCls("title")} />
+              <input data-testid="publish-title" value={form.title} onChange={(e) => set("title", e.target.value)} placeholder={t("publish.titlePlaceholder")} className={errCls("title")} />
               <ErrorMsg msg={errors.title} testid="err-title" />
             </div>
             <div>
               <label className={lblCls("description")}>{t("publish.desc")} *</label>
-              <textarea data-testid="publish-description" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Décrivez le bien : caractéristiques, équipements, environnement, atouts…" className={`${errCls("description")} min-h-[120px] py-2`} />
+              <textarea data-testid="publish-description" value={form.description} onChange={(e) => set("description", e.target.value)} placeholder={t("publish.descPlaceholder")} className={`${errCls("description")} min-h-[120px] py-2`} />
               <div className="flex items-center justify-between mt-1">
                 <ErrorMsg msg={errors.description} testid="err-description" />
                 <span className="text-[10px] text-neutral-400 ms-auto">{form.description?.length || 0} car.</span>
@@ -296,7 +295,7 @@ const Publish = () => {
               </select>
             </div>
             <div>
-              <label className="imora-label">Adresse</label>
+              <label className="imora-label">{t("publish.address")}</label>
               <input data-testid="publish-address" value={form.address} onChange={(e) => set("address", e.target.value)} className="imora-input" />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -309,7 +308,7 @@ const Publish = () => {
                 <input data-testid="publish-lng" type="number" step="any" value={form.lng} onChange={(e) => set("lng", parseFloat(e.target.value))} className="imora-input" />
               </div>
             </div>
-            <button onClick={useGPS} data-testid="publish-gps-btn" className="imora-btn-secondary w-full"><MapPin className="h-4 w-4" /> Utiliser ma position GPS</button>
+            <button onClick={useGPS} data-testid="publish-gps-btn" className="imora-btn-secondary w-full"><MapPin className="h-4 w-4" /> {t("publish.useGps")}</button>
             <div>
               <label className="imora-label">{t("publish.visibility")}</label>
               <div className="grid grid-cols-1 gap-2">

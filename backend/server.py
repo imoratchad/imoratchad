@@ -245,11 +245,96 @@ def build_whatsapp_url(phone: str, message: str) -> str:
     return f"https://wa.me/{digits}?text={quote(message)}"
 
 
+import asyncio
+import resend as resend_sdk
+
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev").strip() or "onboarding@resend.dev"
+if RESEND_API_KEY:
+    resend_sdk.api_key = RESEND_API_KEY
+
+
+def _email_template(title: str, message: str, cta_url: Optional[str] = None, cta_label: Optional[str] = None) -> str:
+    """Simple inline-CSS HTML email template with IMORA branding."""
+    safe_message = (message or "").replace("\n", "<br>")
+    cta_html = ""
+    if cta_url and cta_label:
+        cta_html = (
+            f'<tr><td style="padding:16px 0 8px 0;">'
+            f'<a href="{cta_url}" style="display:inline-block;background:#FF6B1A;color:#ffffff;'
+            f'text-decoration:none;font-weight:700;padding:12px 22px;border-radius:8px;'
+            f'font-family:Arial,sans-serif;font-size:14px;">{cta_label}</a>'
+            f'</td></tr>'
+        )
+    return f"""<!doctype html>
+<html>
+<body style="margin:0;padding:0;background:#F5F5F5;font-family:Arial,Helvetica,sans-serif;color:#0A0A0A;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F5F5F5;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="max-width:600px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+        <tr><td style="background:linear-gradient(135deg,#FF6B1A,#00B4FF);padding:24px;text-align:center;">
+          <div style="font-family:Arial,sans-serif;font-size:24px;font-weight:900;color:#ffffff;letter-spacing:-0.5px;">IMORA <span style="opacity:0.85;font-weight:600;">TCHAD</span></div>
+          <div style="color:rgba(255,255,255,0.9);font-size:12px;margin-top:4px;">La plateforme immobilière du Tchad</div>
+        </td></tr>
+        <tr><td style="padding:28px 28px 8px 28px;">
+          <h1 style="margin:0 0 12px 0;font-size:20px;font-weight:800;color:#0A0A0A;">{title}</h1>
+          <p style="margin:0;font-size:15px;line-height:1.55;color:#333333;">{safe_message}</p>
+        </td></tr>
+        <tr><td style="padding:0 28px 24px 28px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">{cta_html}</table>
+        </td></tr>
+        <tr><td style="border-top:1px solid #EEEEEE;padding:16px 28px;text-align:center;font-size:12px;color:#888888;">
+          Cet e-mail vous est envoyé automatiquement par IMORA Tchad.<br>
+          Contact : <a href="mailto:imoratchad@gmail.com" style="color:#FF6B1A;text-decoration:none;">imoratchad@gmail.com</a> · WhatsApp +235 64 92 73 80
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+
+async def send_email(recipient: str, subject: str, html: str) -> bool:
+    """Fire-and-forget email send. Returns True on success, False on any failure."""
+    if not RESEND_API_KEY:
+        logging.info(f"[email] RESEND_API_KEY not configured — skipping email to {recipient}")
+        return False
+    if not recipient or "@" not in recipient:
+        return False
+    try:
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [recipient],
+            "subject": subject,
+            "html": html,
+        }
+        await asyncio.to_thread(resend_sdk.Emails.send, params)
+        logging.info(f"[email] sent to {recipient} — {subject}")
+        return True
+    except Exception:
+        logging.exception(f"[email] failed to send to {recipient}")
+        return False
+
+
 async def notify_user(user_id: str, ntype: str, title: str, message: str, property_id: str = None, payment_id: str = None) -> dict:
     notif = Notification(user_id=user_id, type=ntype, title=title, message=message, property_id=property_id, payment_id=payment_id)
     await db.notifications.insert_one(notif.model_dump())
     user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
     phone = (user or {}).get("whatsapp") or (user or {}).get("phone") or ""
+    email = (user or {}).get("email") or ""
+
+    # Fire-and-forget email (non-blocking) for property lifecycle events
+    if email and ntype in ("property_verified", "property_approved", "property_rejected", "property_status"):
+        cta_url = None
+        cta_label = None
+        if property_id:
+            frontend_url = os.environ.get("FRONTEND_PUBLIC_URL", "").strip()
+            if frontend_url:
+                cta_url = f"{frontend_url.rstrip('/')}/property/{property_id}"
+                cta_label = "Voir mon annonce"
+        html = _email_template(title, message, cta_url, cta_label)
+        asyncio.create_task(send_email(email, f"IMORA Tchad — {title}", html))
+
     return {"notification": notif.model_dump(), "whatsapp_url": build_whatsapp_url(phone, f"{title}\n\n{message}\n\n— IMORA Tchad")}
 
 

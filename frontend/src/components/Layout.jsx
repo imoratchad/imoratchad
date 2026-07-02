@@ -75,7 +75,7 @@ const Header = () => {
           <NavLink to="/" data-testid="nav-home" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.home")}</NavLink>
           <NavLink to="/search" data-testid="nav-search" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.search")}</NavLink>
           <NavLink to="/map" data-testid="nav-map" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.map")}</NavLink>
-          <NavLink to="/archives" data-testid="nav-archives" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>Vendus & Loués</NavLink>
+          <NavLink to="/archives" data-testid="nav-archives" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.archives")}</NavLink>
           <NavLink to="/publish" data-testid="nav-publish" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.publish")}</NavLink>
           <NavLink to="/contact" data-testid="nav-contact" className={({isActive}) => isActive ? "text-[#FF6B1A]" : "text-white/80 hover:text-white"}>{t("nav.contact")}</NavLink>
         </nav>
@@ -153,7 +153,7 @@ const Footer = () => {
           <h4 className="text-white font-heading font-bold mb-2 text-sm uppercase tracking-widest">Liens</h4>
           <ul className="text-sm space-y-1">
             <li><Link to="/search" className="hover:text-white">{t("nav.search")}</Link></li>
-            <li><Link to="/archives" className="hover:text-white">Vendus & Loués</Link></li>
+            <li><Link to="/archives" className="hover:text-white">{t("nav.archives")}</Link></li>
             <li><Link to="/publish" className="hover:text-white">{t("nav.publish")}</Link></li>
             <li><Link to="/payments" className="hover:text-white">{t("nav.payments")}</Link></li>
             <li><Link to="/feedback" className="hover:text-white">{t("nav.feedback")}</Link></li>
