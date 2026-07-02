@@ -52,6 +52,14 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
   - New env vars: `RESEND_API_KEY`, `SENDER_EMAIL` (default `onboarding@resend.dev`), `FRONTEND_PUBLIC_URL`.
 - **i18n expansion**: Full FR/EN/AR coverage extended for Publish (validation messages, placeholders, toasts, chooseOption, address, useGps), Archives (badge, subtitle, stats labels, top neighborhoods, filters), Layout nav ("Sold & Rented" / "المُباعة والمؤجرة"), Contact, Map. RTL layout confirmed for Arabic.
 
+## Security Hardening (2026-02-15) — 19/19 pytest ✅
+- **SEC-001 [CRITICAL] FIXED**: Admin self-promotion via `PUT /api/auth/profile` blocked. `RoleUpdate.role` now `Literal['particulier','agence','promoteur','demarcheur']` — Pydantic rejects `role='admin'` with HTTP 422. Existing admins cannot demote themselves via profile endpoint.
+- **SEC-002 [HIGH] MITIGATED**: `DISABLE_TEST_SESSIONS=1` env guard rejects `test_session_*` tokens in production.
+- **SEC-003 [HIGH] APP-LEVEL FIXED**: CORS `allow_origins=["*"]` replaced with `allow_origin_regex` matching only `*.preview.emergentagent.com`, `*.emergent.host`, `imoratchad.com`, `localhost`. NOTE: platform edge (Cloudflare) currently overrides CORS with `*` — infra ticket needed for full enforcement.
+- **SEC-004 [MEDIUM] FIXED**: CSV/XLSX formula injection neutralized — `_to_cell` prefixes leading `= + - @ TAB CR` with an apostrophe (CWE-1236).
+- **SEC-005 [MEDIUM] FIXED**: `/api/ai/chat` — 1500-char cap (413), empty message (400), sliding-window rate limit **6/min per IP or user** (429).
+- **Hardening**: Email template escapes HTML in `title`/`message`/`rejection_reason`; Mongo `$regex` search input escaped + capped at 100 chars (ReDoS defense).
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.
