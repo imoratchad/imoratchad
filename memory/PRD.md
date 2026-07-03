@@ -60,6 +60,16 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
 - **SEC-005 [MEDIUM] FIXED**: `/api/ai/chat` — 1500-char cap (413), empty message (400), sliding-window rate limit **6/min per IP or user** (429).
 - **Hardening**: Email template escapes HTML in `title`/`message`/`rejection_reason`; Mongo `$regex` search input escaped + capped at 100 chars (ReDoS defense).
 
+## Pre-Play-Store Hardening (2026-02-16) — 22/22 pytest ✅ (8/8 tasks)
+1. **Scam warning banner** — Red alert on every property detail page (`ScamWarningBanner.jsx`) in FR/EN/AR: "Ne versez JAMAIS d'argent par Mobile Money sans avoir visité le bien…".
+2. **Report system** — "Signaler cette annonce" button + modal (`ReportModal.jsx`) with 7 reasons (arnaque, fake, prix trompeur, déjà vendu, doublon, inapproprié, autre) + détails + coordonnées facultatives. Backend: `POST /api/properties/{id}/report` (anonymous OK), `GET /api/admin/reports`, `PUT /api/admin/reports/{id}` (open/reviewed/dismissed/actioned). Notifications admin auto-envoyées.
+3. **CGU page** — `/terms` avec 12 sections numérotées (Objet, Nature du service, Aucune garantie, Comptes, Publication, Modération, Signalement, Données, PI, Responsabilité, Modif, Contact). Lien footer sur toutes les pages.
+4. **WebP compression 100-220KB** — `Publish.jsx` compressImage() détecte support WebP et compresse à 180KB cible (220KB max), fallback JPEG. Économie ~40-60% vs JPEG. Toast affiche format + économie KB.
+5. **Cache agressif** — Service worker existant confirmé (registré ; cache-first assets, network-first API). Audit invalidation planifié.
+6. **Pagination + Lazy loading** — Search page PAGE_SIZE=12 + bouton "Afficher plus (N restants)". Backend expose `X-Total-Count` header. `PropertyCard` utilise déjà `loading="lazy"` sur images.
+7. **GZip compression** — `GZipMiddleware(minimum_size=500, compresslevel=6)` sur toutes les réponses. Content-Encoding: gzip confirmé.
+8. **HTTPS + Sécurité** — `SecurityHeadersMiddleware` ajoute HSTS (`max-age=31536000; includeSubDomains; preload`), X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy sur toutes les réponses. Le forced-redirect http→https se configure au niveau DNS/hébergeur pour `imoratchad.com`.
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.
