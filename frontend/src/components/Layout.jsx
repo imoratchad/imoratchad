@@ -157,6 +157,7 @@ const Footer = () => {
             <li><Link to="/publish" className="hover:text-white">{t("nav.publish")}</Link></li>
             <li><Link to="/payments" className="hover:text-white">{t("nav.payments")}</Link></li>
             <li><Link to="/feedback" className="hover:text-white">{t("nav.feedback")}</Link></li>
+            <li><Link to="/terms" data-testid="footer-terms-link" className="hover:text-white">{t("terms.title")}</Link></li>
           </ul>
         </div>
         <div>

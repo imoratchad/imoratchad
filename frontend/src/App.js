@@ -21,6 +21,7 @@ import Payments from "@/pages/Payments";
 import MonthlyReport from "@/pages/MonthlyReport";
 import Archives from "@/pages/Archives";
 import Feedback from "@/pages/Feedback";
+import Terms from "@/pages/Terms";
 
 const AppRouter = () => {
   const location = useLocation();
@@ -43,6 +44,7 @@ const AppRouter = () => {
         <Route path="/payments" element={<Payments />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/archives" element={<Archives />} />
+        <Route path="/terms" element={<Terms />} />
         <Route path="/admin/monthly-report" element={<MonthlyReport />} />
         <Route path="*" element={<Home />} />
       </Routes>

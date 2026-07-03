@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Phone, MessageCircle, Mail, Heart, ShieldCheck, MapPin, BedDouble, Bath, Maximize2, ChevronLeft, ChevronRight, Sofa, FileText } from "lucide-react";
+import { Phone, MessageCircle, Mail, Heart, ShieldCheck, MapPin, BedDouble, Bath, Maximize2, ChevronLeft, ChevronRight, Sofa, FileText, Flag } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { formatPrice, findLabelByValue, NDJAMENA_CENTER } from "../lib/constants";
+import ScamWarningBanner from "../components/ScamWarningBanner";
+import ReportModal from "../components/ReportModal";
 
 // Fix Leaflet default icon paths
 delete L.Icon.Default.prototype._getIconUrl;
@@ -23,6 +25,7 @@ const PropertyDetail = () => {
   const [property, setProperty] = useState(null);
   const [photoIdx, setPhotoIdx] = useState(0);
   const [isFav, setIsFav] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
     api.get(`/properties/${id}`).then(({ data }) => setProperty(data));
@@ -51,6 +54,9 @@ const PropertyDetail = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <Link to="/search" className="text-sm font-bold text-neutral-500 hover:text-neutral-900 mb-4 inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> {t("nav.search")}</Link>
+
+      {/* Scam warning — visible on every property detail page */}
+      <ScamWarningBanner />
 
       {/* Owner-only status banner */}
       {isOwner && property.status === "pending" && (
@@ -201,8 +207,24 @@ const PropertyDetail = () => {
               <p className="text-xs text-neutral-700 mt-1">{t("detail.verifiedDesc")}</p>
             </div>
           )}
+          {/* Report button — visible to all users */}
+          <button
+            onClick={() => setShowReport(true)}
+            data-testid="report-btn"
+            className="mt-4 w-full flex items-center justify-center gap-2 text-sm font-bold text-red-600 hover:text-white hover:bg-red-600 border-2 border-red-200 hover:border-red-600 rounded-lg py-2.5 transition"
+          >
+            <Flag className="h-4 w-4" /> {t("report.button")}
+          </button>
         </aside>
       </div>
+
+      {showReport && (
+        <ReportModal
+          propertyId={property.id}
+          propertyTitle={property.title}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 };

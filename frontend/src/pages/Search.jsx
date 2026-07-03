@@ -6,11 +6,15 @@ import { api } from "../lib/api";
 import { CITIES, ARRONDISSEMENTS, ALL_NEIGHBORHOODS, PROPERTY_TYPES, TRANSACTION_TYPES } from "../lib/constants";
 import PropertyCard from "../components/PropertyCard";
 
+const PAGE_SIZE = 12;
+
 const SearchPage = () => {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
   const filters = {
@@ -26,17 +30,23 @@ const SearchPage = () => {
     verified: params.get("verified") || "",
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    const q = {};
+  const fetchData = async (append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
+    const q = { limit: PAGE_SIZE, skip: append ? items.length : 0 };
     Object.entries(filters).forEach(([k, v]) => { if (v) q[k] = v; });
     try {
-      const { data } = await api.get("/properties", { params: q });
-      setItems(data);
-    } finally { setLoading(false); }
+      const res = await api.get("/properties", { params: q });
+      const list = res.data || [];
+      const totalHdr = parseInt(res.headers?.["x-total-count"] || "0", 10) || list.length;
+      setTotal(totalHdr);
+      setItems(prev => append ? [...prev, ...list] : list);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
   };
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, [params.toString()]);
+  useEffect(() => { fetchData(false); /* eslint-disable-next-line */ }, [params.toString()]);
 
   const update = (k, v) => {
     const np = new URLSearchParams(params);
@@ -89,9 +99,26 @@ const SearchPage = () => {
               <p className="text-neutral-600">{t("search.noResults")}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-              {items.map((p) => <PropertyCard key={p.id} property={p} />)}
-            </div>
+            <>
+              <div className="text-sm text-neutral-500 font-semibold mb-3" data-testid="search-count">
+                {items.length} / {total} {t("search.results")}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+                {items.map((p) => <PropertyCard key={p.id} property={p} />)}
+              </div>
+              {items.length < total && (
+                <div className="text-center mt-6">
+                  <button
+                    onClick={() => fetchData(true)}
+                    disabled={loadingMore}
+                    data-testid="load-more-btn"
+                    className="imora-btn-primary px-8"
+                  >
+                    {loadingMore ? t("common.loading_more") : `${t("common.loadMore")} (${total - items.length})`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

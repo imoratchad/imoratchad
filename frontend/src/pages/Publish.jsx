@@ -105,9 +105,11 @@ const Publish = () => {
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          // Aggressive optimization for slow 3G/4G connections in Chad
-          const MAX_W = 1100;       // hard max width
-          const TARGET_BYTES = 220 * 1024; // aim for <= 220 KB per photo
+          // Aggressive optimization for slow 3G/4G connections in Chad.
+          // Target 100–200 KB per photo, WebP if supported (60% smaller than JPEG at equal quality).
+          const MAX_W = 1200;
+          const TARGET_BYTES = 180 * 1024;   // aim for ≤ 180 KB
+          const HARD_MAX_BYTES = 220 * 1024; // never exceed 220 KB
           let { width, height } = img;
           if (width > MAX_W) { height = (MAX_W / width) * height; width = MAX_W; }
           const canvas = document.createElement("canvas");
@@ -117,16 +119,43 @@ const Publish = () => {
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
           ctx.drawImage(img, 0, 0, width, height);
-          // Adaptive quality loop: start at 0.75, drop until file fits target
-          let quality = 0.75;
-          let dataUrl = canvas.toDataURL("image/jpeg", quality);
-          // base64 size ≈ raw * 1.37; estimate raw bytes from string length
-          const estimateBytes = (s) => Math.ceil((s.length - "data:image/jpeg;base64,".length) * 0.75);
-          while (estimateBytes(dataUrl) > TARGET_BYTES && quality > 0.35) {
-            quality -= 0.1;
-            dataUrl = canvas.toDataURL("image/jpeg", quality);
+
+          // Detect WebP support (all modern Android/iOS + Chrome/Edge/Firefox/Safari 14+)
+          const supportsWebp = (() => {
+            try {
+              return canvas.toDataURL("image/webp").indexOf("data:image/webp") === 0;
+            } catch (err) { return false; }
+          })();
+          const mime = supportsWebp ? "image/webp" : "image/jpeg";
+          const prefix = supportsWebp ? "data:image/webp;base64," : "data:image/jpeg;base64,";
+          const estimateBytes = (s) => Math.ceil((s.length - prefix.length) * 0.75);
+
+          // Adaptive quality loop
+          let quality = supportsWebp ? 0.82 : 0.78;
+          let dataUrl = canvas.toDataURL(mime, quality);
+          while (estimateBytes(dataUrl) > TARGET_BYTES && quality > 0.4) {
+            quality -= 0.08;
+            dataUrl = canvas.toDataURL(mime, quality);
           }
-          resolve({ dataUrl, sizeKb: Math.round(estimateBytes(dataUrl) / 1024), originalKb: Math.round(file.size / 1024), quality: Math.round(quality * 100) });
+          // Final safety net if still too big — downscale once more
+          if (estimateBytes(dataUrl) > HARD_MAX_BYTES && width > 900) {
+            const nw = 900;
+            const nh = (nw / width) * height;
+            const c2 = document.createElement("canvas");
+            c2.width = nw; c2.height = nh;
+            const cx = c2.getContext("2d");
+            cx.imageSmoothingEnabled = true;
+            cx.imageSmoothingQuality = "high";
+            cx.drawImage(img, 0, 0, nw, nh);
+            dataUrl = c2.toDataURL(mime, 0.75);
+          }
+          resolve({
+            dataUrl,
+            sizeKb: Math.round(estimateBytes(dataUrl) / 1024),
+            originalKb: Math.round(file.size / 1024),
+            quality: Math.round(quality * 100),
+            format: supportsWebp ? "WebP" : "JPEG",
+          });
         };
         img.src = e.target.result;
       };
@@ -143,7 +172,7 @@ const Publish = () => {
     const finalSize = results.reduce((s, r) => s + r.sizeKb, 0);
     setForm({ ...form, photos: [...form.photos, ...newPhotos] });
     setOptimizing(false);
-    toast.success(`${results.length} photo(s) optimisée(s) — ${finalSize} KB total (économie : ${totalSaved} KB)`);
+    toast.success(`${results.length} photo(s) optimisée(s) en ${results[0]?.format || "WebP"} — ${finalSize} KB total (économie : ${totalSaved} KB)`);
   };
 
   const onVideo = (e) => {

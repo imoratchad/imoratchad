@@ -4,6 +4,8 @@ Plateforme immobilière du Tchad
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Cookie, Header, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import csv
 import io
 from openpyxl import Workbook
@@ -561,7 +563,12 @@ async def list_properties(
 
     cursor = db.properties.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit)
     items = await cursor.to_list(length=limit)
-    return items
+    # Expose total via response header so frontend can drive pagination "Afficher plus" reliably.
+    try:
+        total = await db.properties.count_documents(query)
+    except Exception:
+        total = len(items) + skip
+    return JSONResponse(content=items, headers={"X-Total-Count": str(total), "Access-Control-Expose-Headers": "X-Total-Count"})
 
 
 @api_router.get("/properties/featured")
@@ -722,6 +729,71 @@ async def delete_property(prop_id: str, request: Request, authorization: Optiona
 @api_router.post("/properties/{prop_id}/contact")
 async def increment_contact(prop_id: str):
     await db.properties.update_one({"id": prop_id}, {"$inc": {"contact_count": 1}})
+    return {"ok": True}
+
+
+class ReportPayload(BaseModel):
+    reason: str
+    details: Optional[str] = ""
+    reporter_name: Optional[str] = ""
+    reporter_phone: Optional[str] = ""
+    reporter_email: Optional[str] = ""
+
+
+@api_router.post("/properties/{prop_id}/report")
+async def report_property(prop_id: str, payload: ReportPayload, request: Request, authorization: Optional[str] = Header(None)):
+    """User-driven scam/abuse reporting. Anonymous or authenticated."""
+    user = await get_current_user(request, authorization)
+    prop = await db.properties.find_one({"id": prop_id}, {"_id": 0})
+    if not prop:
+        raise HTTPException(status_code=404, detail="Annonce introuvable")
+    reason = (payload.reason or "").strip()[:60]
+    if not reason:
+        raise HTTPException(status_code=400, detail="Merci d'indiquer un motif")
+    report = {
+        "id": str(uuid.uuid4()),
+        "property_id": prop_id,
+        "property_title": prop.get("title", ""),
+        "reporter_user_id": user.get("user_id") if user else None,
+        "reporter_name": (payload.reporter_name or (user or {}).get("name", "") or "Anonyme")[:80],
+        "reporter_phone": (payload.reporter_phone or (user or {}).get("phone", ""))[:40],
+        "reporter_email": (payload.reporter_email or (user or {}).get("email", ""))[:120],
+        "reason": reason,
+        "details": (payload.details or "").strip()[:800],
+        "status": "open",  # open | reviewed | dismissed | actioned
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.reports.insert_one(report)
+    # Notify all admins
+    try:
+        admins = await db.users.find({"role": "admin"}, {"_id": 0, "user_id": 1}).to_list(length=20)
+        for adm in admins:
+            await notify_user(
+                adm["user_id"],
+                "property_reported",
+                f"🚨 Signalement : {prop.get('title', '')[:50]}",
+                f"Motif : {reason}\n\nDétails : {report['details'] or '(aucun détail)'}",
+                property_id=prop_id,
+            )
+    except Exception:
+        logging.exception("report notify admins failed")
+    return {"ok": True, "id": report["id"]}
+
+
+@api_router.get("/admin/reports")
+async def admin_list_reports(request: Request, authorization: Optional[str] = Header(None)):
+    await require_admin(request, authorization)
+    items = await db.reports.find({}, {"_id": 0}).sort("created_at", -1).limit(500).to_list(length=500)
+    return items
+
+
+@api_router.put("/admin/reports/{report_id}")
+async def admin_update_report(report_id: str, body: dict, request: Request, authorization: Optional[str] = Header(None)):
+    await require_admin(request, authorization)
+    status = (body.get("status") or "").strip()
+    if status not in ("open", "reviewed", "dismissed", "actioned"):
+        raise HTTPException(status_code=400, detail="Statut invalide")
+    await db.reports.update_one({"id": report_id}, {"$set": {"status": status, "reviewed_at": datetime.now(timezone.utc).isoformat()}})
     return {"ok": True}
 
 
@@ -1434,6 +1506,31 @@ app.add_middleware(
     CORSMiddleware,
     **_cors_kwargs,
 )
+
+# GZip compression: compress responses > 500 bytes at compresslevel 6 (good balance for slow 3G/4G in Chad)
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds strict security headers on every response.
+    - HSTS: forces HTTPS for 1 year (Play Store requirement, prevents downgrade attacks).
+    - X-Content-Type-Options: prevents MIME sniffing.
+    - X-Frame-Options: clickjacking defense.
+    - Referrer-Policy: minimize referrer leakage.
+    - Permissions-Policy: block unused browser APIs.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(self), microphone=(), geolocation=(self), payment=()")
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
