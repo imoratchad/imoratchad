@@ -70,6 +70,23 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
 7. **GZip compression** — `GZipMiddleware(minimum_size=500, compresslevel=6)` sur toutes les réponses. Content-Encoding: gzip confirmé.
 8. **HTTPS + Sécurité** — `SecurityHeadersMiddleware` ajoute HSTS (`max-age=31536000; includeSubDomains; preload`), X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy sur toutes les réponses. Le forced-redirect http→https se configure au niveau DNS/hébergeur pour `imoratchad.com`.
 
+## Auth Migration (2026-02-16) — Emergent Auth → Direct Google OAuth
+- **Objectif** : supprimer toute référence à Emergent sur l'écran de connexion. Utilisateurs voient uniquement "IMORA Tchad" (branding géré via Google Cloud Console → OAuth consent screen).
+- **Backend** : nouveau `POST /api/auth/google` (échange code Google → session IMORA). L'endpoint historique `/auth/session` (Emergent Auth) est préservé pour compat.
+  - Vars env : `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (à mettre dans Secrets Emergent).
+- **Frontend** :
+  - `/pages/Login.jsx` : bouton "Continuer avec Google" redirige directement vers `accounts.google.com/o/oauth2/v2/auth` avec state CSRF.
+  - `/pages/GoogleCallback.jsx` (nouveau) : gère le retour `/auth/google?code=...&state=...`, POST au backend, stocke `imora_token`.
+  - Var env : `REACT_APP_GOOGLE_CLIENT_ID`.
+- **Google Cloud Console requis** :
+  - Authorized JS Origins : preview URL + `https://imoratchad.com` + `https://www.imoratchad.com`
+  - Authorized redirect URIs : mêmes URLs + `/auth/google`
+  - OAuth consent screen : App name "IMORA Tchad", logo, domaine `imoratchad.com`, publish "In production"
+- **Actions utilisateur avant activation prod** :
+  1. Reset `GOOGLE_CLIENT_SECRET` (le précédent a fuité en clair)
+  2. Ajouter `GOOGLE_CLIENT_SECRET` dans Secrets Emergent (backend)
+  3. Redéployer
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.

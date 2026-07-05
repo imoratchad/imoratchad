@@ -407,6 +407,107 @@ async def require_admin(request: Request, authorization: Optional[str] = Header(
 # ============================================================
 # Auth routes
 # ============================================================
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+
+
+class GoogleCallbackPayload(BaseModel):
+    code: str
+    redirect_uri: str
+
+
+async def _upsert_google_user(email: str, name: str, picture: str) -> tuple[str, str]:
+    """Create or update a user from Google profile, return (user_id, session_token)."""
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing:
+        user_id = existing["user_id"]
+        await db.users.update_one(
+            {"user_id": user_id},
+            {"$set": {"name": name, "picture": picture, "last_login": datetime.now(timezone.utc).isoformat()}},
+        )
+    else:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        role = "admin" if email in ADMIN_EMAILS else "particulier"
+        user_obj = User(user_id=user_id, email=email, name=name, picture=picture, role=role)
+        await db.users.insert_one(user_obj.model_dump())
+
+    session_token = f"imora_{uuid.uuid4().hex}{uuid.uuid4().hex[:8]}"
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.user_sessions.insert_one(
+        {
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
+    return user_id, session_token
+
+
+@api_router.post("/auth/google")
+async def google_oauth_callback(payload: GoogleCallbackPayload, response: Response):
+    """Direct Google OAuth 2.0 callback — replaces Emergent-managed auth.
+    The frontend receives ?code= at /auth/google, then POSTs { code, redirect_uri } here.
+    Backend exchanges the code for tokens, fetches the user profile, upserts the user,
+    creates an IMORA session and returns it. No Emergent branding anywhere in the flow.
+
+    REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+    """
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=500, detail="Google OAuth non configuré côté serveur")
+
+    async with httpx.AsyncClient(timeout=15) as http:
+        # 1. Exchange authorization code for access token
+        token_resp = await http.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "code": payload.code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": payload.redirect_uri,
+                "grant_type": "authorization_code",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if token_resp.status_code != 200:
+            logging.warning(f"[google-oauth] token exchange failed: {token_resp.status_code} {token_resp.text[:200]}")
+            raise HTTPException(status_code=401, detail="Échange du code Google échoué")
+        tokens = token_resp.json()
+        access_token = tokens.get("access_token")
+        if not access_token:
+            raise HTTPException(status_code=401, detail="Token d'accès manquant")
+
+        # 2. Fetch user profile
+        userinfo_resp = await http.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if userinfo_resp.status_code != 200:
+            raise HTTPException(status_code=401, detail="Impossible de récupérer le profil Google")
+        info = userinfo_resp.json()
+
+    email = info.get("email")
+    if not email or not info.get("email_verified", True):
+        raise HTTPException(status_code=401, detail="E-mail Google non vérifié")
+    name = info.get("name") or email
+    picture = info.get("picture", "")
+
+    user_id, session_token = await _upsert_google_user(email, name, picture)
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=7 * 24 * 3600,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return {"user": user, "session_token": session_token}
+
+
 @api_router.post("/auth/session")
 async def auth_session(request: Request, response: Response):
     body = await request.json()

@@ -15,6 +15,7 @@ import Dashboard from "@/pages/Dashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
+import GoogleCallback from "@/pages/GoogleCallback";
 import MapPage from "@/pages/MapPage";
 import Contact from "@/pages/Contact";
 import Payments from "@/pages/Payments";
@@ -39,6 +40,7 @@ const AppRouter = () => {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/auth/google" element={<GoogleCallback />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/payments" element={<Payments />} />
