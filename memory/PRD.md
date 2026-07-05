@@ -100,6 +100,13 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
   - `email_verified` default in Google OAuth callback changed from `True` → `False` (fail-safe on missing field).
   - `_client_ip` also used in AI chat rate-limiter for correct per-client throttling.
 
+## Profile Editor Upgrade (2026-02-16) — 40/40 pytest ✅
+- **New rich profile page** at `/dashboard` → tab "Profil" — 2-column layout desktop:
+  - **Éditeur** : avatar upload avec compression WebP ≤ 300 KB (recadrage carré 512×512 auto), nom, email (read-only), rôle (masqué pour admin), téléphone, WhatsApp, nom d'agence, bio 500 chars max.
+  - **Aperçu public live** (right column, sticky) : montre en temps réel ce que voient acheteurs/locataires (card sombre gradient IMORA avec avatar+nom+badge rôle+bio+contacts).
+- **Backend** : `PUT /api/auth/profile` étendu — accepte `name` (1-80), `picture` (≤ 1 MB base64), `bio` (≤ 500). Validation stricte : empty name → 400, huge picture → 413, admin role → 422 (SEC-001 conservé).
+- **Frontend** : validation live avec bordures rouges + messages FR + bouton "Enregistrer" sticky avec état "dirty" et feedback toast.
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.
