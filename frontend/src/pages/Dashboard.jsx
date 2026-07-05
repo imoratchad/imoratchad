@@ -1,24 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Home as HomeIcon, Heart, MessageCircle, Eye, Trash2, Edit, Phone, User, Save, BarChart3, Bell } from "lucide-react";
+import { Home as HomeIcon, Heart, Eye, Trash2, Phone, BarChart3, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from "recharts";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { ROLES, formatPrice, findLabelByValue } from "../lib/constants";
+import { formatPrice, findLabelByValue } from "../lib/constants";
+import ProfileEditor from "../components/ProfileEditor";
 
 const COLORS = ["#FF6B1A", "#00B4FF", "#0A0A0A", "#FECB00", "#22C55E", "#EF4444"];
 
 const Dashboard = () => {
   const { t } = useTranslation();
-  const { user, refresh } = useAuth();
+  const { user } = useAuth();
   const [tab, setTab] = useState("mine");
   const [mine, setMine] = useState([]);
   const [favs, setFavs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [analytics, setAnalytics] = useState(null);
-  const [profile, setProfile] = useState({ role: user?.role || "particulier", phone: user?.phone || "", whatsapp: user?.whatsapp || "", agency_name: user?.agency_name || "" });
 
   useEffect(() => {
     if (!user) return;
@@ -34,14 +34,6 @@ const Dashboard = () => {
 
   const totalViews = mine.reduce((s, p) => s + (p.views || 0), 0);
   const totalContacts = mine.reduce((s, p) => s + (p.contact_count || 0), 0);
-
-  const saveProfile = async () => {
-    try {
-      await api.put("/auth/profile", profile);
-      await refresh();
-      toast.success("Profil mis à jour");
-    } catch (e) { toast.error(t("common.error")); }
-  };
 
   const remove = async (id) => {
     if (!window.confirm("Supprimer cette annonce ?")) return;
@@ -233,22 +225,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      {tab === "profile" && (
-        <div className="bg-white border border-neutral-200 rounded-xl p-5 max-w-xl space-y-4">
-          <div>
-            <label className="imora-label">{t("dashboard.role")}</label>
-            <select data-testid="profile-role" value={profile.role} onChange={(e) => setProfile({ ...profile, role: e.target.value })} className="imora-input">
-              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </div>
-          <div><label className="imora-label">Téléphone</label><input data-testid="profile-phone" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} className="imora-input" /></div>
-          <div><label className="imora-label">WhatsApp</label><input data-testid="profile-whatsapp" value={profile.whatsapp} onChange={(e) => setProfile({ ...profile, whatsapp: e.target.value })} className="imora-input" /></div>
-          {profile.role === "agence" && (
-            <div><label className="imora-label">Nom de l'agence</label><input data-testid="profile-agency-name" value={profile.agency_name} onChange={(e) => setProfile({ ...profile, agency_name: e.target.value })} className="imora-input" /></div>
-          )}
-          <button onClick={saveProfile} data-testid="save-profile-btn" className="imora-btn-primary"><Save className="h-4 w-4" /> {t("dashboard.saveProfile")}</button>
-        </div>
-      )}
+      {tab === "profile" && <ProfileEditor />}
     </div>
   );
 };

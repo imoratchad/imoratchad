@@ -71,6 +71,7 @@ class User(BaseModel):
     phone: Optional[str] = ""
     whatsapp: Optional[str] = ""
     agency_name: Optional[str] = ""
+    bio: Optional[str] = ""
     verified_agency: bool = False
     suspended: bool = False
     last_login: Optional[str] = None
@@ -82,9 +83,12 @@ class RoleUpdate(BaseModel):
     # Admin role is granted exclusively via the ADMIN_EMAILS allowlist on Google login
     # or by an existing admin via /api/admin/users/{user_id}. Never trust client input for admin.
     role: Literal["particulier", "agence", "promoteur", "demarcheur"]
+    name: Optional[str] = None
+    picture: Optional[str] = None
     phone: Optional[str] = ""
     whatsapp: Optional[str] = ""
     agency_name: Optional[str] = ""
+    bio: Optional[str] = ""
 
 
 class Property(BaseModel):
@@ -595,12 +599,25 @@ async def update_profile(payload: RoleUpdate, request: Request, authorization: O
     # themselves via this endpoint — role changes for admins go through /api/admin/users/{id}.
     if user.get("role") != "admin":
         update["role"] = payload.role
+    if payload.name is not None:
+        name = payload.name.strip()[:80]
+        if not name:
+            raise HTTPException(status_code=400, detail="Le nom ne peut pas être vide")
+        update["name"] = name
+    if payload.picture is not None:
+        pic = payload.picture.strip()
+        # Cap avatar size at ~1 MB base64 (~730 KB raw) to avoid DoS
+        if len(pic) > 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Photo de profil trop lourde (max 1 MB)")
+        update["picture"] = pic
     if payload.phone is not None:
-        update["phone"] = payload.phone
+        update["phone"] = payload.phone.strip()[:40]
     if payload.whatsapp is not None:
-        update["whatsapp"] = payload.whatsapp
+        update["whatsapp"] = payload.whatsapp.strip()[:40]
     if payload.agency_name is not None:
-        update["agency_name"] = payload.agency_name
+        update["agency_name"] = payload.agency_name.strip()[:120]
+    if payload.bio is not None:
+        update["bio"] = payload.bio.strip()[:500]
     if update:
         await db.users.update_one({"user_id": user["user_id"]}, {"$set": update})
     updated = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0})
