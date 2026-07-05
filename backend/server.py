@@ -776,7 +776,9 @@ def _validate_property_media(payload: "PropertyCreate") -> None:
     if len(payload.documents or []) > _MAX_DOCUMENTS:
         raise HTTPException(status_code=413, detail=f"Maximum {_MAX_DOCUMENTS} documents par annonce")
     for doc in (payload.documents or []):
-        if len(doc) > _MAX_DOCUMENT_BYTES * 1.4:
+        # documents are {type, name, data} dicts — measure the base64 payload, not the dict itself
+        data_str = (doc or {}).get("data", "") if isinstance(doc, dict) else ""
+        if len(data_str) > _MAX_DOCUMENT_BYTES * 1.4:
             raise HTTPException(status_code=413, detail=f"Chaque document doit faire moins de {_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB")
 
 
@@ -877,7 +879,7 @@ async def report_property(prop_id: str, payload: ReportPayload, request: Request
     """User-driven scam/abuse reporting. Anonymous or authenticated.
     Rate-limited per IP/user to prevent anonymous spam that would flood admin notifications."""
     user = await get_current_user(request, authorization)
-    rate_key = f"report:u:{user['user_id']}" if user else f"report:ip:{request.client.host if request.client else 'unknown'}"
+    rate_key = f"report:u:{user['user_id']}" if user else f"report:ip:{_client_ip(request)}"
     # Reuse the AI rate-limiter helper (6/min sliding window)
     if not _check_ai_rate_limit(rate_key):
         raise HTTPException(status_code=429, detail="Trop de signalements. Réessayez dans une minute.")
@@ -1529,6 +1531,22 @@ _AI_RATE_WINDOW_SEC = 60
 _AI_MAX_MESSAGE_CHARS = 1500
 
 
+def _client_ip(request: Request) -> str:
+    """Return the real client IP, honouring X-Forwarded-For behind Cloudflare/K8s ingress.
+    We take the FIRST entry (the original client) — subsequent entries are proxy hops.
+    Falls back to request.client.host for direct connections."""
+    xff = request.headers.get("x-forwarded-for") or request.headers.get("X-Forwarded-For")
+    if xff:
+        # First IP is the original client; strip whitespace and drop empty parts.
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    cf = request.headers.get("cf-connecting-ip") or request.headers.get("CF-Connecting-IP")
+    if cf:
+        return cf.strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _check_ai_rate_limit(key: str) -> bool:
     """Return True if the caller is within the rate limit, False if throttled."""
     now = datetime.now(timezone.utc).timestamp()
@@ -1555,7 +1573,7 @@ async def ai_chat(payload: ChatMessage, request: Request, authorization: Optiona
         raise HTTPException(status_code=413, detail=f"Message trop long (max {_AI_MAX_MESSAGE_CHARS} caractères)")
 
     # Rate limit: authenticated users keyed by user_id, anonymous by client IP.
-    rate_key = f"u:{user['user_id']}" if user else f"ip:{request.client.host if request.client else 'unknown'}"
+    rate_key = f"u:{user['user_id']}" if user else f"ip:{_client_ip(request)}"
     if not _check_ai_rate_limit(rate_key):
         raise HTTPException(status_code=429, detail="Trop de messages. Réessayez dans une minute.")
 

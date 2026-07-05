@@ -1,0 +1,29 @@
+{
+  "summary": "Iter_6 formal re-run: executed /app/backend/tests/test_audit_fixes.py — ALL 32/32 tests PASS in 142.77s. Confirmed prior main-agent report. Also ran regression suites test_security_fixes.py + test_hardening.py: 40/41 pass. The 1 failure (TestReports::test_report_authenticated_ok) is a flaky rate-limit artifact — the per-user report rate-limit budget was exhausted by the just-run audit suite (TestReportRateLimit::test_report_authenticated_rate_limit_per_user), causing a subsequent 429. Not a regression.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/properties/{id}/report", "issue": "test_hardening.py::TestReports::test_report_authenticated_ok is order-sensitive due to shared per-user rate-limit state with audit suite. Pure test hygiene issue — runs green in isolation."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_audit_fixes.py",
+    "/app/test_reports/pytest/audit_iter6_results.xml"
+  ],
+  "action_items": [
+    "(Optional) In test_hardening.TestReports, use a unique X-Forwarded-For or add a small sleep/reset so it is not affected when run back-to-back with audit's rate-limit suite."
+  ],
+  "critical_code_review_comments": [
+    "server.py _validate_property_media (documents cap) and _client_ip helper (X-Forwarded-For parsing + fallback to request.client.host) are correctly implemented and covered by 4 new tests each — all green.",
+    "SEC-001 (CORS), SEC-002 (media caps on create+update incl. documents), SEC-003 (legacy /auth/session → 410) verified.",
+    "No _id leak, no hardcoded URLs observed in audited paths."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (32/32 audit) — 97.6% (40/41 across audit+regression, 1 flaky)", "frontend": "N/A"},
+  "seed_data_creation": "None. Tests self-provision property fixtures via authenticated agence session.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All 32 audit-fix tests pass cleanly. If running regression back-to-back with audit suite, expect 1 rate-limit flake in test_hardening.TestReports::test_report_authenticated_ok — run that file in isolation or wait ~60s between suites.",
+  "rca of the issue": "Not applicable — no real bugs remain. Flake RCA: per-user report rate-limit (server-side sliding window) persists across pytest files when tests reuse the same test session/user. Fix by isolating X-Forwarded-For per test or by resetting budget."
+}

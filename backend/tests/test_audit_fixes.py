@@ -171,13 +171,25 @@ class TestSEC002MediaCapsCreate:
         assert r.status_code == 413, r.text
         assert "document" in r.text.lower()
 
-    @pytest.mark.xfail(reason="BUG: _validate_property_media uses len(doc) on a dict — checks key count, not size. Document oversize cap is not enforced.")
     def test_document_too_large_413(self):
+        # 9 MB raw → base64 ~ 12.6 MB > 8MB * 1.4 cap. Must trigger 413.
         big_data = _b64_of_size(9 * 1024 * 1024, "data:application/pdf;base64,")
         doc = {"type": "application/pdf", "name": "big.pdf", "data": big_data}
         payload = _min_property_payload(documents=[doc])
         r = requests.post(f"{INTERNAL}/api/properties", headers=_h(AGENCE), json=payload, timeout=30)
         assert r.status_code == 413, r.text
+        assert "document" in r.text.lower(), r.text
+
+    def test_document_under_cap_ok(self):
+        # 2 MB raw → base64 ~ 2.8 MB. Under 8MB*1.4 cap. Must NOT trigger 413.
+        data = _b64_of_size(2 * 1024 * 1024, "data:application/pdf;base64,")
+        doc = {"type": "application/pdf", "name": "small.pdf", "data": data}
+        payload = _min_property_payload(title="TEST_doc_under_cap", documents=[doc])
+        r = requests.post(f"{INTERNAL}/api/properties", headers=_h(AGENCE), json=payload, timeout=30)
+        assert r.status_code in (200, 201), r.text
+        pid = r.json().get("id")
+        if pid:
+            requests.delete(f"{BASE_URL}/api/properties/{pid}", headers=_h(AGENCE))
 
 
 class TestSEC002MediaCapsUpdate:
@@ -201,6 +213,15 @@ class TestSEC002MediaCapsUpdate:
         r = requests.put(f"{BASE_URL}/api/properties/{owned_property_id}",
                          headers=_h(AGENCE), json=payload)
         assert r.status_code == 413, r.text
+
+    def test_update_document_too_large_413(self, owned_property_id):
+        big_data = _b64_of_size(9 * 1024 * 1024, "data:application/pdf;base64,")
+        doc = {"type": "application/pdf", "name": "big.pdf", "data": big_data}
+        payload = _min_property_payload(documents=[doc])
+        r = requests.put(f"{INTERNAL}/api/properties/{owned_property_id}",
+                         headers=_h(AGENCE), json=payload, timeout=30)
+        assert r.status_code == 413, r.text
+        assert "document" in r.text.lower(), r.text
 
     def test_update_valid_media_ok(self, owned_property_id):
         payload = _min_property_payload(photos=[_b64_of_size(1000) for _ in range(3)])
@@ -253,24 +274,51 @@ def any_property_id():
 
 
 class TestReportRateLimit:
-    def test_report_rate_limit_kicks_in(self, any_property_id):
-        # Wait to let previous rate-limit windows expire
+    def test_report_rate_limit_kicks_in_per_xff(self, any_property_id):
+        """15 concurrent anon reports with same X-Forwarded-For → ~6 OK, ~9 429 (per-IP window of 6/min).
+        Hits INTERNAL to preserve our XFF header untouched by Cloudflare."""
         time.sleep(3)
-        # Use a fresh anonymous burst (per-IP). 15 concurrent → expect ~6 OK, ~9 429.
-        url = f"{BASE_URL}/api/properties/{any_property_id}/report"
+        url = f"{INTERNAL}/api/properties/{any_property_id}/report"
+        xff = f"203.0.113.{int(time.time()) % 250 + 1}"  # unique-ish IP per run
+        headers = {"Content-Type": "application/json", "X-Forwarded-For": xff}
         body = {"reason": "TEST_rate", "details": "burst"}
         with concurrent.futures.ThreadPoolExecutor(max_workers=15) as ex:
-            futs = [ex.submit(requests.post, url, json=body, timeout=10) for _ in range(15)]
+            futs = [ex.submit(requests.post, url, json=body, headers=headers, timeout=10) for _ in range(15)]
             statuses = [f.result().status_code for f in futs]
         n200 = sum(1 for s in statuses if s == 200)
         n429 = sum(1 for s in statuses if s == 429)
-        print(f"[report burst] statuses={statuses} n200={n200} n429={n429}")
-        # NOTE: rate limit is per (request.client.host) — behind Cloudflare/ingress,
-        # multiple ingress pods share load so a single attacker may see the effective
-        # cap multiplied by N ingress hops. On preview infra we observed 2 ingress IPs
-        # → up to 12 accepted. This confirms the *middleware* triggers 429 once cap is
-        # hit per ingress IP, but the design does NOT proxy-trust X-Forwarded-For.
-        assert n429 >= 3, f"expected ≥3 429s (rate limiter must fire), got {n429}. statuses={statuses}"
+        print(f"[report xff burst xff={xff}] statuses={statuses} n200={n200} n429={n429}")
+        # With real per-XFF isolation, we should now see exactly 6 accepted / 9 rejected.
+        assert n200 <= 6, f"expected ≤6 accepted (per-IP cap), got {n200}. statuses={statuses}"
+        assert n429 >= 9, f"expected ≥9 429s, got {n429}. statuses={statuses}"
+
+    def test_report_rate_limit_fresh_budget_per_xff(self, any_property_id):
+        """A DIFFERENT X-Forwarded-For gets a fresh 6/min budget — verifies real client IP is used
+        for rate-key derivation (not the ingress hop IP)."""
+        time.sleep(2)
+        url = f"{INTERNAL}/api/properties/{any_property_id}/report"
+        xff = f"198.51.100.{int(time.time()) % 250 + 1}"  # different subnet, unique-ish
+        headers = {"Content-Type": "application/json", "X-Forwarded-For": xff}
+        body = {"reason": "TEST_rate_fresh"}
+        statuses = []
+        for _ in range(8):
+            statuses.append(requests.post(url, json=body, headers=headers, timeout=10).status_code)
+        n200 = sum(1 for s in statuses if s == 200)
+        n429 = sum(1 for s in statuses if s == 429)
+        print(f"[report xff fresh xff={xff}] statuses={statuses} n200={n200} n429={n429}")
+        # Fresh window → first 6 accepted, remaining 2 rejected.
+        assert n200 == 6, f"expected exactly 6 accepted for fresh XFF, got {n200}. statuses={statuses}"
+        assert n429 == 2, f"expected exactly 2 429s, got {n429}. statuses={statuses}"
+
+    def test_report_client_ip_fallback_to_request_client_host(self, any_property_id):
+        """Without XFF and without CF-Connecting-IP, _client_ip must fall back to request.client.host.
+        We hit INTERNAL (localhost) so request.client.host = 127.0.0.1. Two requests from same host
+        share a budget; not testing the exact cap here — just verifying the endpoint still works
+        (no 500) with the fallback path."""
+        time.sleep(65)  # let previous window for 127.0.0.1 expire
+        url = f"{INTERNAL}/api/properties/{any_property_id}/report"
+        r = requests.post(url, json={"reason": "TEST_fallback"}, timeout=10)
+        assert r.status_code in (200, 429), r.text  # 200 if window fresh; 429 if collisions
 
     def test_report_authenticated_rate_limit_per_user(self, any_property_id):
         time.sleep(65)  # ensure window cleared

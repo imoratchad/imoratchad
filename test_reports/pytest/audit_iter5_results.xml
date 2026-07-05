@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="1" time="0.167" timestamp="2026-07-05T16:51:53.343427+00:00" hostname="agent-env-e07824f3-aa17-45a0-8353-b763530edfa6"><testcase classname="" name="backend.tests.test_audit_fixes" time="0.000"><error message="collection failure">backend/tests/test_audit_fixes.py:21: in &lt;module&gt;
+    assert BASE_URL, "REACT_APP_BACKEND_URL must be set"
+E   AssertionError: REACT_APP_BACKEND_URL must be set
+E   assert ''</error></testcase></testsuite></testsuites>
