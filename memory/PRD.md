@@ -87,6 +87,19 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
   2. Ajouter `GOOGLE_CLIENT_SECRET` dans Secrets Emergent (backend)
   3. Redéployer
 
+## Second Security Audit Fixes (2026-02-16) — 32/32 pytest ✅
+- **SEC-001 [MEDIUM] FIXED**: CORS fallback regex tightened. No longer accepts arbitrary `*.preview.emergentagent.com` / `*.emergent.host` subdomains. Fallback = production custom domain (`imoratchad.com`, `www.imoratchad.com`) + `localhost` dev only. Additional origins (preview) must be opted-in via `CORS_ORIGINS` env var.
+- **SEC-002 [MEDIUM] FIXED**: Media size caps applied on BOTH create AND update via new `_validate_property_media` helper.
+  - photos: max 10, each ≤ 5 MB
+  - videos: max 2, each ≤ 25 MB
+  - documents: max 5, each ≤ 8 MB (fix: previously used `len(dict)` — silently bypassable — now correctly reads `doc.get('data', '')` base64 length)
+  - Returns HTTP 413 with FR error messages
+- **SEC-003 [LOW] FIXED**: Legacy `/api/auth/session` (Emergent-managed Google Auth) gated behind `ENABLE_LEGACY_EMERGENT_AUTH=1` env var. Default OFF returns HTTP 410 "Endpoint retiré".
+- **Hardening**:
+  - Rate-limit on `POST /api/properties/{id}/report` (6/min sliding window) using `_client_ip` helper that reads `X-Forwarded-For` / `CF-Connecting-IP` (real client IP behind Cloudflare/K8s ingress, not proxy IP).
+  - `email_verified` default in Google OAuth callback changed from `True` → `False` (fail-safe on missing field).
+  - `_client_ip` also used in AI chat rate-limiter for correct per-client throttling.
+
 ## Backlog
 - P1: Real-time messaging (WebSocket) — currently REST CRUD only.
 - P1: Email/SMS notifications on listing verification.
