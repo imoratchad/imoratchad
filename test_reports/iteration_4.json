@@ -1,0 +1,43 @@
+{
+  "summary": "Post-audit fix regression for IMORA Tchad — SEC-001 (CORS), SEC-002 (media caps create+update), SEC-003 (legacy /auth/session gated), report rate-limit hardening, email_verified default. 27/28 pass (+ 1 xfail documenting an internal bug in document size cap). Prior suites (test_security_fixes, test_hardening) also re-run: 66/68 pass — the 2 residual failures are a pre-existing rate-limiter design gap around ingress IP handling (see below) and one collateral test starvation in test_hardening.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/properties (documents field size check)",
+        "issue": "BUG in _validate_property_media (server.py:778-780): iterates `for doc in payload.documents` where documents is List[dict]. `len(doc)` returns the number of keys in the dict (always 3: type/name/data), NOT the byte size of the base64 payload. Consequence: oversize document cap (_MAX_DOCUMENT_BYTES=8MB) is never enforced. Fix: change to `len(doc.get('data', ''))` (mirroring the photo/video check). Test test_document_too_large_413 currently marked xfail to record the regression."
+      },
+      {
+        "endpoint": "POST /api/properties/{id}/report (anonymous rate limit)",
+        "issue": "Rate-limit key uses `request.client.host` which behind Cloudflare/ingress resolves to the ingress pod IP (observed 2 rotating IPs: 10.208.128.2/6). A single attacker's burst is therefore de-facto capped at (6 × number-of-ingress-hops), not 6/min. Preview run: 12 accepted, 3 rejected out of 15. Authenticated path (per-user-id) works correctly. Fix: honor X-Forwarded-For (first hop) OR configure app.middleware to set request.client from XFF, then continue using .host."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_audit_fixes.py",
+    "/app/test_reports/pytest/audit_results.xml",
+    "/app/test_reports/pytest/audit_full_results.xml"
+  ],
+  "action_items": [
+    "Fix document byte-size cap: replace `len(doc)` with `len(doc.get('data', ''))` in _validate_property_media on both create and update paths (server.py:778-780).",
+    "Fix anonymous report rate-limit to use X-Forwarded-For (client real IP) instead of ingress IP; otherwise cap is effectively multiplied by ingress fan-out.",
+    "(Optional) Add pytest.fixture(scope='session') sleeps or dedicated test rate-limit reset to avoid collateral 429s between rate-limit tests and other tests using the same identity (test_hardening.test_report_authenticated_ok failed only when audited in the same session)."
+  ],
+  "critical_code_review_comments": [
+    "SEC-002: documents cap uses `len(dict)` — silently bypassable. Photos/videos use `len(str)` correctly.",
+    "SEC-001: CORS fix verified — untrusted / evil / arbitrary preview subdomains no longer reflected. Trusted origins (imoratchad.com, preview URL) still allowed at the FastAPI layer. Cloudflare edge still may inject `*` per prior test_hardening SEC003 notes; that's a platform-layer concern.",
+    "SEC-003: /api/auth/session returns 410 by default (ENABLE_LEGACY_EMERGENT_AUTH gates it). Verified.",
+    "email_verified default: /auth/google callback rejects any userinfo where email_verified is falsy/missing (`info.get('email_verified', False)`). Verified statically. Note: User model in /app/backend/server.py still defaults `email_verified: bool = True` at model level (verified absence via grep). If persisted users are consulted for verified state later, keep this in sync.",
+    "server.py is 1678 lines — split into routers already recommended in iter 3, still pending.",
+    "Report rate limiter reuses AI helper (6/min sliding window) — good, but per-IP behind CDN is weak (see minor issue above)."
+  ],
+  "updated_files": ["/app/backend/tests/test_audit_fixes.py"],
+  "success_rate": {"backend": "96% (27/28 including one xfail documenting a real bug)", "frontend": "N/A (backend-only request)"},
+  "test_credentials": "Bearer test_session_admin, test_session_agence, test_session_particulier (see /app/memory/test_credentials.md).",
+  "seed_data_creation": "Multiple TEST_-prefixed reports created during rate-limit bursts (per anon/auth test); one property created+deleted in CRUD flow; owned_property module fixture cleaned up on teardown.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run `pytest /app/backend/tests/test_audit_fixes.py -v` (~80s). Video-oversize tests hit http://localhost:8001 directly to bypass Cloudflare 413. If document size cap is fixed by main agent, flip xfail → strict pass. Beware rate-limit tests consume the 6/min window for the authenticated PART user — space 65s between rate-limit and normal report tests, or split runs.",
+  "rca of the issue": "Two real bugs surfaced by these tests: (1) documents oversize check is a no-op due to len() on a dict — trivial one-line fix. (2) Anonymous report rate limit uses request.client.host which behind a load-balanced ingress = ingress IP, not user IP; effective cap scales with ingress hop count. Both are backend-only, no infrastructure changes required."
+}

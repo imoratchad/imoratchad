@@ -489,7 +489,7 @@ async def google_oauth_callback(payload: GoogleCallbackPayload, response: Respon
         info = userinfo_resp.json()
 
     email = info.get("email")
-    if not email or not info.get("email_verified", True):
+    if not email or not info.get("email_verified", False):
         raise HTTPException(status_code=401, detail="E-mail Google non vérifié")
     name = info.get("name") or email
     picture = info.get("picture", "")
@@ -510,6 +510,11 @@ async def google_oauth_callback(payload: GoogleCallbackPayload, response: Respon
 
 @api_router.post("/auth/session")
 async def auth_session(request: Request, response: Response):
+    """LEGACY: Emergent-managed Google Auth. Kept for backward compatibility with the
+    old mobile builds. Now gated by ENABLE_LEGACY_EMERGENT_AUTH=1 — return 410 by default
+    so this parallel auth path can't be silently exploited (SEC-003)."""
+    if os.environ.get("ENABLE_LEGACY_EMERGENT_AUTH", "").lower() not in ("1", "true", "yes"):
+        raise HTTPException(status_code=410, detail="Endpoint retiré. Utilisez /api/auth/google.")
     body = await request.json()
     session_id = body.get("session_id")
     if not session_id:
@@ -745,16 +750,41 @@ async def archives_stats():
     }
 
 
+# Media size caps applied on both create AND update to prevent DoS via large base64 blobs
+# (SEC-002). Each dataURL string is ~1.37× the raw bytes, so the max base64 length caps
+# reflect the effective raw size targets we want to allow.
+_MAX_PHOTOS = 10
+_MAX_PHOTO_BYTES = 5 * 1024 * 1024        # 5 MB raw ≈ 6.85 MB base64
+_MAX_VIDEOS = 2
+_MAX_VIDEO_BYTES = 25 * 1024 * 1024       # 25 MB raw ≈ 34 MB base64
+_MAX_DOCUMENTS = 5
+_MAX_DOCUMENT_BYTES = 8 * 1024 * 1024     # 8 MB raw
+
+
+def _validate_property_media(payload: "PropertyCreate") -> None:
+    """Enforce per-field count/size caps on photos/videos/documents. Raises HTTPException(413)."""
+    if len(payload.photos) > _MAX_PHOTOS:
+        raise HTTPException(status_code=413, detail=f"Maximum {_MAX_PHOTOS} photos par annonce")
+    for ph in payload.photos:
+        if len(ph) > _MAX_PHOTO_BYTES * 1.4:
+            raise HTTPException(status_code=413, detail=f"Chaque photo doit faire moins de {_MAX_PHOTO_BYTES // (1024 * 1024)} MB")
+    if len(payload.videos or []) > _MAX_VIDEOS:
+        raise HTTPException(status_code=413, detail=f"Maximum {_MAX_VIDEOS} vidéos par annonce")
+    for vid in (payload.videos or []):
+        if len(vid) > _MAX_VIDEO_BYTES * 1.4:
+            raise HTTPException(status_code=413, detail=f"Chaque vidéo doit faire moins de {_MAX_VIDEO_BYTES // (1024 * 1024)} MB")
+    if len(payload.documents or []) > _MAX_DOCUMENTS:
+        raise HTTPException(status_code=413, detail=f"Maximum {_MAX_DOCUMENTS} documents par annonce")
+    for doc in (payload.documents or []):
+        if len(doc) > _MAX_DOCUMENT_BYTES * 1.4:
+            raise HTTPException(status_code=413, detail=f"Chaque document doit faire moins de {_MAX_DOCUMENT_BYTES // (1024 * 1024)} MB")
+
+
 @api_router.post("/properties")
 async def create_property(payload: PropertyCreate, request: Request, authorization: Optional[str] = Header(None)):
     import hashlib
     user = await require_user(request, authorization)
-    # Photo validation: max 10 photos, each ≤ 5 MB
-    if len(payload.photos) > 10:
-        raise HTTPException(status_code=400, detail="Maximum 10 photos par annonce")
-    for ph in payload.photos:
-        if len(ph) > 5 * 1024 * 1024 * 1.4:  # base64 inflates ~33%
-            raise HTTPException(status_code=400, detail="Chaque photo doit faire moins de 5 MB")
+    _validate_property_media(payload)
     # Duplicate photo detection (SHA256)
     photo_hashes = []
     for ph in payload.photos:
@@ -806,6 +836,7 @@ async def get_property(prop_id: str):
 @api_router.put("/properties/{prop_id}")
 async def update_property(prop_id: str, payload: PropertyCreate, request: Request, authorization: Optional[str] = Header(None)):
     user = await require_user(request, authorization)
+    _validate_property_media(payload)
     p = await db.properties.find_one({"id": prop_id}, {"_id": 0})
     if not p:
         raise HTTPException(status_code=404, detail="Not found")
@@ -843,8 +874,13 @@ class ReportPayload(BaseModel):
 
 @api_router.post("/properties/{prop_id}/report")
 async def report_property(prop_id: str, payload: ReportPayload, request: Request, authorization: Optional[str] = Header(None)):
-    """User-driven scam/abuse reporting. Anonymous or authenticated."""
+    """User-driven scam/abuse reporting. Anonymous or authenticated.
+    Rate-limited per IP/user to prevent anonymous spam that would flood admin notifications."""
     user = await get_current_user(request, authorization)
+    rate_key = f"report:u:{user['user_id']}" if user else f"report:ip:{request.client.host if request.client else 'unknown'}"
+    # Reuse the AI rate-limiter helper (6/min sliding window)
+    if not _check_ai_rate_limit(rate_key):
+        raise HTTPException(status_code=429, detail="Trop de signalements. Réessayez dans une minute.")
     prop = await db.properties.find_one({"id": prop_id}, {"_id": 0})
     if not prop:
         raise HTTPException(status_code=404, detail="Annonce introuvable")
@@ -1591,17 +1627,21 @@ async def root():
 
 app.include_router(api_router)
 
-# CORS: with allow_credentials=True we must never use wildcard "*". If CORS_ORIGINS is unset
-# or is a wildcard, we fall back to an origin regex that permits our production/preview domains
-# only. Explicit origins from env take precedence.
+# CORS: credentialed CORS must never trust arbitrary subdomains. The fallback regex
+# was previously accepting the ENTIRE `*.preview.emergentagent.com` and `*.emergent.host`
+# families, which meant any attacker page hosted on the shared platform could read a
+# victim's private data (SEC-001). We now trust ONLY the production custom domain by
+# default, and require operators to opt-in to additional origins via CORS_ORIGINS env var.
+# For preview development, set CORS_ORIGINS in the preview .env explicitly.
 _cors_env = os.environ.get('CORS_ORIGINS', '').strip()
 _explicit_origins = [o.strip() for o in _cors_env.split(',') if o.strip() and o.strip() != '*']
 _cors_kwargs = dict(allow_credentials=True, allow_methods=["*"], allow_headers=["*"], expose_headers=["set-cookie"])
 if _explicit_origins:
     _cors_kwargs["allow_origins"] = _explicit_origins
 else:
-    # Allow the preview subdomain family + localhost for dev. This never matches arbitrary origins.
-    _cors_kwargs["allow_origin_regex"] = r"^https?://(localhost(:\d+)?|.*\.preview\.emergentagent\.com|.*\.emergent\.host|imoratchad\.com|.*\.imoratchad\.com)$"
+    # Strict fallback: production custom domain + localhost dev only. Preview URL must be
+    # opted-in via CORS_ORIGINS in the preview environment .env.
+    _cors_kwargs["allow_origin_regex"] = r"^https?://(localhost(:\d+)?|imoratchad\.com|www\.imoratchad\.com)$"
 
 app.add_middleware(
     CORSMiddleware,
