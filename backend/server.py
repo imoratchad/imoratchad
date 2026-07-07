@@ -477,7 +477,18 @@ async def google_oauth_callback(payload: GoogleCallbackPayload, response: Respon
         )
         if token_resp.status_code != 200:
             logging.warning(f"[google-oauth] token exchange failed: {token_resp.status_code} {token_resp.text[:200]}")
-            raise HTTPException(status_code=401, detail="Échange du code Google échoué")
+            try:
+                g_err = token_resp.json().get("error", "")
+            except Exception:
+                g_err = ""
+            messages = {
+                "invalid_client": "Secret client Google invalide (GOOGLE_CLIENT_SECRET incorrect — vérifiez qu'il correspond au nouveau client OAuth).",
+                "deleted_client": "Le client OAuth Google a été supprimé (GOOGLE_CLIENT_ID obsolète).",
+                "redirect_uri_mismatch": "URI de redirection non autorisée dans Google Cloud Console.",
+                "invalid_grant": "Code Google expiré ou déjà utilisé. Réessayez de vous connecter.",
+            }
+            detail = messages.get(g_err, f"Échange du code Google échoué ({g_err or token_resp.status_code})")
+            raise HTTPException(status_code=401, detail=detail)
         tokens = token_resp.json()
         access_token = tokens.get("access_token")
         if not access_token:
