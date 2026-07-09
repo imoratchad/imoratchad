@@ -47,8 +47,15 @@ const GoogleCallback = () => {
         window.location.href = dest;
       })
       .catch((e) => {
-        setError(e.response?.data?.detail || "Connexion Google échouée.");
-        setTimeout(() => navigate("/login"), 3000);
+        const d = e.response?.data?.detail;
+        const msg =
+          typeof d === "string" && d
+            ? d
+            : e.response
+            ? `Erreur serveur (${e.response.status}). Réessayez dans un instant.`
+            : "Erreur réseau — impossible de joindre le serveur.";
+        setError(msg);
+        setTimeout(() => navigate("/login"), 8000);
       });
   }, [navigate]);
 

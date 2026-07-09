@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import re
+import bcrypt
 import logging
 import uuid
 import httpx
@@ -50,7 +52,7 @@ app = FastAPI(title="IMORA Tchad API", lifespan=lifespan)
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
-ADMIN_EMAILS = {"imoratchad@gmail.com"}
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "imoratchad@gmail.com").split(",") if e.strip()}
 
 # ============================================================
 # Models
@@ -510,6 +512,57 @@ async def google_oauth_callback(payload: GoogleCallbackPayload, response: Respon
     picture = info.get("picture", "")
 
     user_id, session_token = await _upsert_google_user(email, name, picture)
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=7 * 24 * 3600,
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return {"user": user, "session_token": session_token}
+
+
+class AdminLoginPayload(BaseModel):
+    email: str
+    password: str
+
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+_admin_pw_hash = bcrypt.hashpw(ADMIN_PASSWORD.encode("utf-8"), bcrypt.gensalt()) if ADMIN_PASSWORD else None
+
+
+@api_router.post("/auth/admin-login")
+async def admin_login(payload: AdminLoginPayload, request: Request, response: Response):
+    """Fallback admin login: email (allowlisted) + password from ADMIN_PASSWORD env.
+    Brute-force protected: 5 failed attempts per IP+email = 15 min lockout."""
+    if not _admin_pw_hash:
+        raise HTTPException(status_code=503, detail="Connexion admin non configurée (secret ADMIN_PASSWORD manquant)")
+    if len(ADMIN_PASSWORD) < 8 or not re.search(r"[A-Za-z]", ADMIN_PASSWORD) or not re.search(r"\d", ADMIN_PASSWORD):
+        raise HTTPException(status_code=503, detail="ADMIN_PASSWORD trop faible : minimum 8 caractères avec lettres ET chiffres")
+
+    email = payload.email.strip().lower()
+    identifier = f"adminlogin:{_client_ip(request)}:{email}"
+    now = datetime.now(timezone.utc)
+    attempt = await db.login_attempts.find_one({"identifier": identifier})
+    if attempt and attempt.get("locked_until", "") > now.isoformat():
+        raise HTTPException(status_code=429, detail="Trop de tentatives échouées. Réessayez dans 15 minutes.")
+
+    ok = email in ADMIN_EMAILS and bcrypt.checkpw(payload.password.encode("utf-8"), _admin_pw_hash)
+    if not ok:
+        fails = (attempt.get("fails", 0) if attempt else 0) + 1
+        update = {"fails": fails, "updated_at": now.isoformat()}
+        if fails >= 5:
+            update["locked_until"] = (now + timedelta(minutes=15)).isoformat()
+            update["fails"] = 0
+        await db.login_attempts.update_one({"identifier": identifier}, {"$set": update}, upsert=True)
+        raise HTTPException(status_code=401, detail="E-mail ou mot de passe incorrect")
+
+    await db.login_attempts.delete_one({"identifier": identifier})
+    user_id, session_token = await _upsert_google_user(email, email.split("@")[0].capitalize(), "")
+    await db.users.update_one({"user_id": user_id}, {"$set": {"role": "admin"}})
     response.set_cookie(
         key="session_token",
         value=session_token,

@@ -119,3 +119,9 @@ Build IMORA Tchad — a modern, lightweight, fast, mobile-first real-estate plat
 - Add a few demo properties for marketing visualization.
 - SEO meta tags per page (helmet).
 - Image lazy + intersection observer for very low connection.
+
+## Implemented (2026-07-09) — Admin password login + OAuth diagnostics
+- **Espace admin avec mot de passe** : page `/admin-login` (lien discret "Accès administrateur" sur /login). Endpoint `POST /api/auth/admin-login` — email dans allowlist ADMIN_EMAILS (env) + mot de passe ADMIN_PASSWORD (env, min 8 car. lettres+chiffres). Brute force : 5 échecs/IP+email = blocage 15 min. Testé: succès admin, mauvais mdp 401, email non autorisé 401, lockout 429 ✅
+- **Diagnostic OAuth amélioré** : `/api/auth/google` renvoie désormais la raison exacte de Google (invalid_client, deleted_client, redirect_uri_mismatch, invalid_grant) en français. GoogleCallback.jsx affiche le détail + statut HTTP (plus de message générique).
+- **Saga Google OAuth production** : le client fut supprimé/recréé plusieurs fois par l'utilisateur. Client actif actuel : 505788899980-lvj0o429r7a0ouisha711ufjt1o6ogkt. Vérifié en prod : ID + secret corrects (invalid_grant sur faux code = paire valide).
+- **Secrets production requis** : GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, REACT_APP_GOOGLE_CLIENT_ID, ADMIN_PASSWORD, ADMIN_EMAILS.

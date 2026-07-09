@@ -47,6 +47,13 @@ const Login = () => {
           {t("login.continueGoogle")}
         </button>
         <p className="text-xs text-neutral-400 mt-4">{t("login.terms")}</p>
+        <a
+          href="/admin-login"
+          data-testid="admin-login-link"
+          className="text-xs text-neutral-300 hover:text-neutral-600 mt-3 inline-block transition"
+        >
+          Accès administrateur
+        </a>
       </div>
     </div>
   );
